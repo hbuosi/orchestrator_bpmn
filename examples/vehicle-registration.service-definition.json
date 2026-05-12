@@ -1,0 +1,133 @@
+{
+  "version": "1.0",
+  "serviceCard": {
+    "serviceCode": "TAMM-VR-001",
+    "nameEn": "Vehicle Registration Renewal",
+    "nameAr": "تجديد تسجيل المركبة",
+    "category": "life-event",
+    "owningEntity": "Abu Dhabi Police — Traffic & Licensing Directorate",
+    "channels": ["online", "app", "in-person"],
+    "targetSegment": ["citizen", "resident"],
+    "eligibilityCriteria": [
+      "Vehicle must be registered in Abu Dhabi emirate",
+      "Valid UAE driving licence",
+      "No outstanding traffic fines",
+      "Valid vehicle insurance policy",
+      "Vehicle passed roadworthiness inspection (Muroor test) within the last 30 days"
+    ],
+    "requiredDocuments": [
+      { "name": "Emirates ID", "format": "Original or digital via UAE Pass" },
+      { "name": "Current vehicle registration card", "format": "Original" },
+      { "name": "Valid insurance certificate", "format": "PDF or original", "notes": "Must cover renewal period" },
+      { "name": "Muroor vehicle inspection certificate", "format": "PDF", "notes": "Valid for 30 days" }
+    ],
+    "journeySteps": [
+      { "step": 1, "title": "Login with UAE Pass", "description": "Authenticate with UAE Pass Level 2. Traffic fines and insurance status loaded automatically.", "estimatedMinutes": 1 },
+      { "step": 2, "title": "Verify Vehicle Details", "description": "System retrieves vehicle info from Abu Dhabi Police registry. Confirm make, model, plate number.", "estimatedMinutes": 2 },
+      { "step": 3, "title": "Confirm Insurance", "description": "Upload or confirm existing digital insurance certificate. System validates coverage dates.", "estimatedMinutes": 3 },
+      { "step": 4, "title": "Upload Inspection Certificate", "description": "Upload Muroor inspection PDF. System validates certificate authenticity and expiry.", "estimatedMinutes": 2 },
+      { "step": 5, "title": "Pay Renewal Fee", "description": "Pay via card, UAE Pass Pay, ADCB or FAB. Any outstanding fines must be settled first.", "estimatedMinutes": 3 },
+      { "step": 6, "title": "Receive Registration", "description": "New registration card dispatched via Emirates Post or available for pickup at service center. Digital copy via UAE Pass.", "estimatedMinutes": 2 }
+    ],
+    "fees": [
+      { "channel": "online", "applicantType": "Light vehicle", "amountAED": 370 },
+      { "channel": "online", "applicantType": "Heavy vehicle", "amountAED": 620 },
+      { "channel": "app", "applicantType": "Light vehicle", "amountAED": 370 },
+      { "channel": "in-person", "applicantType": "Light vehicle", "amountAED": 420 },
+      { "channel": "in-person", "applicantType": "Heavy vehicle", "amountAED": 670 }
+    ],
+    "slaDays": { "online": 1, "app": 1, "in-person": 1 },
+    "legalBasis": "Federal Traffic Law No. 21 of 1995 and its amendments; Abu Dhabi Police Ministerial Resolution No. 178 of 2017",
+    "transformationStage": "smart",
+    "uaePassEnabled": true,
+    "uaePassLevel": 2,
+    "outputDocuments": [
+      { "name": "Vehicle Registration Card", "format": "Physical card + PDF/A", "validityDays": 365, "deliveryMethod": "Emirates Post (1–3 days) or service center pickup + UAE Pass digital copy" },
+      { "name": "Payment Receipt", "format": "PDF", "deliveryMethod": "Email + TAMM portal" }
+    ],
+    "lifeEvent": "Vehicle Ownership",
+    "prerequisiteServices": ["Vehicle Inspection — Muroor (TAMM-VI-001)", "Traffic Fine Settlement (TAMM-TF-001)"],
+    "integrationApis": ["UAE Pass API", "Abu Dhabi Police Registry", "Insurance Authority Database", "Muroor Inspection System", "Emirates Post API", "Payment Gateway"],
+    "addaComplianceLevel": "Level 2 — Integrated"
+  },
+  "bpmnProcess": {
+    "id": "Process_VehicleRegistration",
+    "name": "Vehicle Registration Renewal — Abu Dhabi",
+    "elements": [
+      { "type": "startEvent", "id": "start", "label": "Renewal Requested", "colorKey": "happy" },
+      { "type": "serviceTask", "id": "task_auth", "label": "Authenticate UAE Pass", "colorKey": "system" },
+      { "type": "serviceTask", "id": "task_load_vehicle", "label": "Load Vehicle Data", "colorKey": "system" },
+      { "type": "serviceTask", "id": "task_check_fines", "label": "Check Traffic Fines", "colorKey": "system" },
+      {
+        "type": "exclusiveGateway", "id": "gw_fines", "label": "Outstanding Fines?", "colorKey": "happy",
+        "branches": [
+          {
+            "condition": "No Fines",
+            "colorKey": "happy",
+            "path": [
+              { "type": "serviceTask", "id": "task_validate_insurance", "label": "Validate Insurance", "colorKey": "system" },
+              {
+                "type": "exclusiveGateway", "id": "gw_insurance", "label": "Insurance Valid?", "colorKey": "happy",
+                "branches": [
+                  {
+                    "condition": "Valid",
+                    "colorKey": "happy",
+                    "path": [
+                      { "type": "serviceTask", "id": "task_validate_inspection", "label": "Validate Inspection Certificate", "colorKey": "system" },
+                      {
+                        "type": "exclusiveGateway", "id": "gw_inspection", "label": "Inspection Valid?", "colorKey": "happy",
+                        "branches": [
+                          {
+                            "condition": "Valid",
+                            "colorKey": "happy",
+                            "path": [
+                              { "type": "userTask", "id": "task_pay", "label": "Pay Renewal Fee", "colorKey": "manual" },
+                              { "type": "serviceTask", "id": "task_issue_card", "label": "Issue Registration Card", "colorKey": "system" },
+                              { "type": "serviceTask", "id": "task_notify_ready", "label": "Notify Applicant", "colorKey": "system" },
+                              { "type": "endEvent", "id": "end_success", "label": "Registration Renewed", "colorKey": "happy" }
+                            ]
+                          },
+                          {
+                            "condition": "Expired or Invalid",
+                            "colorKey": "error",
+                            "path": [
+                              { "type": "userTask", "id": "task_redirect_muroor", "label": "Redirect to Muroor Inspection", "colorKey": "error" },
+                              { "type": "endEvent", "id": "end_inspection_fail", "label": "Inspection Required", "colorKey": "error" }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "condition": "Expired or Missing",
+                    "colorKey": "error",
+                    "path": [
+                      { "type": "userTask", "id": "task_request_insurance", "label": "Request Valid Insurance", "colorKey": "error" },
+                      { "type": "endEvent", "id": "end_insurance_fail", "label": "Insurance Required", "colorKey": "error" }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "condition": "Has Outstanding Fines",
+            "colorKey": "error",
+            "path": [
+              { "type": "userTask", "id": "task_settle_fines", "label": "Settle Traffic Fines", "colorKey": "error" },
+              { "type": "endEvent", "id": "end_fines", "label": "Returned — Fines Pending", "colorKey": "cancel" }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "generate": {
+    "serviceCard": true,
+    "bpmn": true,
+    "pdf": true,
+    "svg": true,
+    "standaloneHtml": true
+  }
+}
