@@ -1,5 +1,5 @@
-import BpmnModdle from 'bpmn-moddle';
-import type { BpmnProcess, BpmnElement, Branch } from '../schemas/bpmn-elements.schema.js';
+import { BpmnModdle } from 'bpmn-moddle';
+import type { BpmnProcess, BpmnElement, BpmnBranch as Branch } from '../schemas/bpmn-elements.schema.js';
 
 const moddle = new BpmnModdle();
 
@@ -38,7 +38,7 @@ export async function generateBpmnXml(process: BpmnProcess): Promise<string> {
     }
   }
 
-  (rootProcess as { flowElements: object[] }).flowElements = [
+  (rootProcess as unknown as { flowElements: object[] }).flowElements = [
     ...flowElements,
     ...sequenceFlows,
   ];

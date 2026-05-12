@@ -7,7 +7,7 @@ export async function exportBpmnToSvg(bpmnXml: string): Promise<string> {
   const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
   const page = await browser.newPage();
 
-  await page.setContent(html, { waitUntil: 'networkidle0' });
+  await page.setContent(html, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.djs-container', { timeout: 10_000 });
 
   // Extract SVG from bpmn-js canvas

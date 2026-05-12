@@ -13,7 +13,8 @@
     "skipLibCheck": true,
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["bun-types"]
+    "typeRoots": ["src/types", "node_modules/@types", "node_modules/bun-types"],
+    "types": []
   },
   "include": ["src/**/*", "tests/**/*"],
   "exclude": ["node_modules", "dist", "output"]

@@ -5,7 +5,7 @@ export async function exportHtmlToPdf(html: string, outputPath: string): Promise
   const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
   const page = await browser.newPage();
 
-  await page.setContent(html, { waitUntil: 'networkidle0' });
+  await page.setContent(html, { waitUntil: 'domcontentloaded' });
   await page.setViewport({ width: 1200, height: 900, deviceScaleFactor: 2 });
 
   await page.pdf({
@@ -22,7 +22,7 @@ export async function exportBpmnToPdf(bpmnViewerHtml: string, outputPath: string
   const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
   const page = await browser.newPage();
 
-  await page.setContent(bpmnViewerHtml, { waitUntil: 'networkidle0' });
+  await page.setContent(bpmnViewerHtml, { waitUntil: 'domcontentloaded' });
   await page.setViewport({ width: 1400, height: 900, deviceScaleFactor: 2 });
 
   // Wait for bpmn-js to finish rendering

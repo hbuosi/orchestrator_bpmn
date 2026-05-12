@@ -1,6 +1,6 @@
-import BpmnModdle from 'bpmn-moddle';
+import { BpmnModdle } from 'bpmn-moddle';
 import { BPMN_COLORS, type ColorKey } from '../constants/colors.js';
-import type { BpmnProcess, BpmnElement, Branch } from '../schemas/bpmn-elements.schema.js';
+import type { BpmnProcess, BpmnElement, BpmnBranch as Branch } from '../schemas/bpmn-elements.schema.js';
 
 const moddle = new BpmnModdle();
 

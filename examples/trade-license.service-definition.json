@@ -29,7 +29,7 @@
       { "step": 3, "title": "Reserve Trade Name", "description": "Enter up to 3 name preferences. System checks availability in real time.", "estimatedMinutes": 3 },
       { "step": 4, "title": "Upload Documents", "description": "Upload required documents. AI-powered validation checks format, expiry, and completeness.", "estimatedMinutes": 10 },
       { "step": 5, "title": "Pay Fees", "description": "Select payment method (card, ADCB, FAB, UAE Pass Pay). Receipt generated instantly.", "estimatedMinutes": 3 },
-      { "step": 6, "title": "Await Approval", "description": "Application reviewed by ADDED within 3 business days. SMS/email notifications at each stage.", "estimatedMinutes": null },
+      { "step": 6, "title": "Await Approval", "description": "Application reviewed by ADDED within 3 business days. SMS/email notifications at each stage." },
       { "step": 7, "title": "Download License", "description": "Approved license available in TAMM portal and sent via UAE Pass. Physical copy optional.", "estimatedMinutes": 2 }
     ],
     "fees": [
