@@ -1,0 +1,116 @@
+{
+  "version": "1.0",
+  "serviceCard": {
+    "serviceCode": "TAMM-TL-001",
+    "nameEn": "Trade License Issuance — New Application",
+    "nameAr": "إصدار الرخصة التجارية — طلب جديد",
+    "category": "business",
+    "owningEntity": "Abu Dhabi Department of Economic Development (ADDED)",
+    "channels": ["online", "app", "in-person"],
+    "targetSegment": ["business", "resident"],
+    "eligibilityCriteria": [
+      "Applicant must be 21 years of age or older",
+      "Valid UAE identity document (Emirates ID or Passport)",
+      "Business activity must be listed in the approved activities register",
+      "Lease agreement or ownership document for business premises",
+      "No outstanding fines or violations with ADDED"
+    ],
+    "requiredDocuments": [
+      { "name": "Emirates ID copy", "format": "PDF/JPG", "notes": "Both sides required" },
+      { "name": "Passport copy", "format": "PDF/JPG", "notes": "Valid for at least 6 months" },
+      { "name": "Tenancy contract (Ejari)", "format": "PDF", "notes": "Valid and registered" },
+      { "name": "Trade name reservation certificate", "format": "PDF" },
+      { "name": "No-objection certificate (if applicable)", "format": "PDF" },
+      { "name": "Initial approval certificate", "format": "PDF" }
+    ],
+    "journeySteps": [
+      { "step": 1, "title": "Login with UAE Pass", "description": "Authenticate via UAE Pass (Level 2 — identity data shared automatically)", "estimatedMinutes": 2 },
+      { "step": 2, "title": "Select Business Activity", "description": "Choose one or more activities from the ADDED approved list. System validates combinations.", "estimatedMinutes": 5 },
+      { "step": 3, "title": "Reserve Trade Name", "description": "Enter up to 3 name preferences. System checks availability in real time.", "estimatedMinutes": 3 },
+      { "step": 4, "title": "Upload Documents", "description": "Upload required documents. AI-powered validation checks format, expiry, and completeness.", "estimatedMinutes": 10 },
+      { "step": 5, "title": "Pay Fees", "description": "Select payment method (card, ADCB, FAB, UAE Pass Pay). Receipt generated instantly.", "estimatedMinutes": 3 },
+      { "step": 6, "title": "Await Approval", "description": "Application reviewed by ADDED within 3 business days. SMS/email notifications at each stage.", "estimatedMinutes": null },
+      { "step": 7, "title": "Download License", "description": "Approved license available in TAMM portal and sent via UAE Pass. Physical copy optional.", "estimatedMinutes": 2 }
+    ],
+    "fees": [
+      { "channel": "online", "applicantType": "New LLC", "amountAED": 3200 },
+      { "channel": "online", "applicantType": "Sole Establishment", "amountAED": 1800 },
+      { "channel": "in-person", "applicantType": "New LLC", "amountAED": 3400 },
+      { "channel": "in-person", "applicantType": "Sole Establishment", "amountAED": 2000 }
+    ],
+    "slaDays": { "online": 3, "app": 3, "in-person": 5 },
+    "legalBasis": "Federal Commercial Companies Law (Federal Law No. 32 of 2021); Abu Dhabi Law No. 2 of 2021 on Business Licensing",
+    "transformationStage": "smart",
+    "uaePassEnabled": true,
+    "uaePassLevel": 3,
+    "outputDocuments": [
+      { "name": "Trade License Certificate", "format": "PDF/A", "validityDays": 365, "deliveryMethod": "TAMM Portal + UAE Pass + Email" },
+      { "name": "Payment Receipt", "format": "PDF", "deliveryMethod": "TAMM Portal + Email" },
+      { "name": "Activity Registration Certificate", "format": "PDF/A", "validityDays": 365, "deliveryMethod": "TAMM Portal" }
+    ],
+    "lifeEvent": "Start a Business",
+    "prerequisiteServices": ["Trade Name Reservation (TAMM-TN-001)"],
+    "integrationApis": ["UAE Pass API", "ADDED Activities Registry", "Land Department (tenancy validation)", "Payment Gateway (FAB, ADCB)", "SMS/Email Notification Service"],
+    "addaComplianceLevel": "Level 3 — Fully Integrated"
+  },
+  "bpmnProcess": {
+    "id": "Process_TradeLicense",
+    "name": "Trade License Issuance — Abu Dhabi",
+    "elements": [
+      { "type": "startEvent", "id": "start", "label": "Application Submitted", "colorKey": "happy" },
+      { "type": "serviceTask", "id": "task_validate_uaepass", "label": "Authenticate UAE Pass", "colorKey": "system" },
+      { "type": "serviceTask", "id": "task_validate_docs", "label": "Validate Documents", "colorKey": "system" },
+      {
+        "type": "exclusiveGateway", "id": "gw_docs_valid", "label": "Documents Valid?",
+        "branches": [
+          {
+            "condition": "Valid",
+            "colorKey": "happy",
+            "path": [
+              { "type": "serviceTask", "id": "task_reserve_name", "label": "Reserve Trade Name", "colorKey": "system" },
+              { "type": "userTask", "id": "task_pay_fees", "label": "Pay Fees", "colorKey": "manual" },
+              { "type": "serviceTask", "id": "task_submit_added", "label": "Submit to ADDED", "colorKey": "system" },
+              {
+                "type": "exclusiveGateway", "id": "gw_approved", "label": "Application Approved?",
+                "branches": [
+                  {
+                    "condition": "Approved",
+                    "colorKey": "happy",
+                    "path": [
+                      { "type": "serviceTask", "id": "task_generate_license", "label": "Generate Trade License", "colorKey": "system" },
+                      { "type": "serviceTask", "id": "task_notify_approved", "label": "Notify Applicant", "colorKey": "system" },
+                      { "type": "endEvent", "id": "end_success", "label": "License Issued", "colorKey": "happy" }
+                    ]
+                  },
+                  {
+                    "condition": "Rejected",
+                    "colorKey": "error",
+                    "path": [
+                      { "type": "userTask", "id": "task_notify_rejected", "label": "Notify Rejection + Reason", "colorKey": "error" },
+                      { "type": "endEvent", "id": "end_rejected", "label": "Application Rejected", "colorKey": "cancel" }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "condition": "Invalid",
+            "colorKey": "error",
+            "path": [
+              { "type": "userTask", "id": "task_request_correction", "label": "Request Document Correction", "colorKey": "error" },
+              { "type": "endEvent", "id": "end_invalid", "label": "Returned to Applicant", "colorKey": "error" }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "generate": {
+    "serviceCard": true,
+    "bpmn": true,
+    "pdf": true,
+    "svg": true,
+    "standaloneHtml": true
+  }
+}
