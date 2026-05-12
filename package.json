@@ -7,6 +7,7 @@
     "generate": "bun run src/orchestrator.ts",
     "generate:bpmn": "bun run src/orchestrator.ts --only=bpmn",
     "generate:card": "bun run src/orchestrator.ts --only=card",
+    "generate:from-text": "bun run src/generate-from-text.ts",
     "validate": "bun run src/validate.ts",
     "preview": "bun run src/preview.ts",
     "test": "bun test",

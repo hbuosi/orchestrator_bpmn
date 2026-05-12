@@ -15,11 +15,11 @@ declare module 'bpmn-moddle' {
     warnings: string[];
   }
 
-  export class BpmnModdle {
+  class BpmnModdle {
     create(type: string, attrs?: Record<string, unknown>): ModdleElement;
     toXML(element: ModdleElement, options?: { format?: boolean }): Promise<ToXMLResult>;
     fromXML(xml: string): Promise<FromXMLResult>;
   }
 
-  export type { BpmnModdle };
+  export { BpmnModdle };
 }
