@@ -5,9 +5,10 @@ import { generateBpmnXml } from './generators/bpmn-xml.generator.js';
 import { applyAutoLayout } from './generators/bpmn-layout.js';
 import { applyColors } from './generators/bpmn-colors.js';
 import { generateServiceCardHtml } from './generators/service-card.generator.js';
-import { exportHtmlToPdf, exportBpmnToPdf } from './exporters/pdf.exporter.js';
+import { exportHtmlToPdf, exportBpmnToPdf, exportCombinedToPdf } from './exporters/pdf.exporter.js';
 import { exportBpmnToSvg } from './exporters/svg.exporter.js';
 import { bpmnViewerTemplate } from './templates/bpmn-viewer.html.js';
+import { combinedViewerTemplate } from './templates/combined-viewer.html.js';
 
 const args = process.argv.slice(2);
 const inputFile = args.find(a => !a.startsWith('--'));
@@ -37,6 +38,8 @@ const generateCard = (!onlyFlag || onlyFlag === 'card') && def.generate.serviceC
 
 console.log(`\nGenerating documents for: ${def.serviceCard.nameEn} (${code})\n`);
 
+let coloredXml: string | null = null;
+
 if (generateBpmn) {
   console.log('  [1/4] Generating BPMN XML...');
   const rawXml = await generateBpmnXml(def.bpmnProcess);
@@ -45,14 +48,14 @@ if (generateBpmn) {
   const layoutedXml = await applyAutoLayout(rawXml);
 
   console.log('  [3/4] Applying color conventions...');
-  const coloredXml = await applyColors(layoutedXml, def.bpmnProcess);
+  coloredXml = await applyColors(layoutedXml, def.bpmnProcess);
 
   const xmlPath = path.join(outDir, `${code}-bpmn.xml`);
   writeFileSync(xmlPath, coloredXml);
   console.log(`       Saved: ${xmlPath}`);
 
   if (def.generate.standaloneHtml) {
-    const viewerHtml = bpmnViewerTemplate(coloredXml, { title: def.serviceCard.nameEn });
+    const viewerHtml = bpmnViewerTemplate(coloredXml, { title: def.serviceCard.nameEn, serviceCode: code });
     const htmlPath = path.join(outDir, `${code}-bpmn-viewer.html`);
     writeFileSync(htmlPath, viewerHtml);
     console.log(`       Saved: ${htmlPath}`);
@@ -68,7 +71,7 @@ if (generateBpmn) {
 
   if (def.generate.pdf) {
     console.log('       Exporting BPMN PDF...');
-    const viewerHtml = bpmnViewerTemplate(coloredXml, { title: def.serviceCard.nameEn });
+    const viewerHtml = bpmnViewerTemplate(coloredXml, { title: def.serviceCard.nameEn, serviceCode: code, hiddenForExport: true });
     const pdfPath = path.join(outDir, `${code}-bpmn.pdf`);
     await exportBpmnToPdf(viewerHtml, pdfPath);
     console.log(`       Saved: ${pdfPath}`);
@@ -87,6 +90,22 @@ if (generateCard) {
     const pdfPath = path.join(outDir, `${code}-service-card.pdf`);
     await exportHtmlToPdf(cardHtml, pdfPath);
     console.log(`       Saved: ${pdfPath}`);
+  }
+}
+
+// Combined viewer — primary output when both BPMN and card are generated
+if (coloredXml && def.generate.standaloneHtml) {
+  console.log('\n  [*] Generating combined viewer (Service Card + BPMN)...');
+  const combinedHtml = combinedViewerTemplate(def.serviceCard, coloredXml);
+  const combinedPath = path.join(outDir, `${code}-combined.html`);
+  writeFileSync(combinedPath, combinedHtml);
+  console.log(`       Saved: ${combinedPath}`);
+
+  if (def.generate.pdf) {
+    console.log('       Exporting combined PDF (A3 landscape)...');
+    const combinedPdfPath = path.join(outDir, `${code}-combined.pdf`);
+    await exportCombinedToPdf(combinedHtml, combinedPdfPath);
+    console.log(`       Saved: ${combinedPdfPath}`);
   }
 }
 

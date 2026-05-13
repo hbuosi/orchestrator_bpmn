@@ -1,10 +1,8 @@
-import { BPMN_COLORS } from '../constants/colors.js';
-import type { BpmnProcess, BpmnElement, BpmnBranch as Branch } from '../schemas/bpmn-elements.schema.js';
+import { BPMN_COLORS } from '../constants/colors';
+import type { BpmnProcess, BpmnElement, BpmnBranch as Branch } from '../schemas/bpmn-elements.schema';
 
 type ColorKey = keyof typeof BPMN_COLORS;
 
-// Applies BPMN in Color Spec (OMG MIWG 2014) + bioc: compatibility layer.
-// Uses regex injection instead of a moddle round-trip to preserve BPMNEdge elements.
 export async function applyColors(
   bpmnXml: string,
   process: BpmnProcess,
@@ -34,10 +32,10 @@ function injectColors(xml: string, colorMap: Map<string, ColorKey>): string {
 
 function inferColorKey(type: string): ColorKey {
   if (type === 'startEvent') return 'happy';
-  if (type === 'endEvent') return 'happy_end';
+  if (type === 'endEvent') return 'happy';
   if (type === 'serviceTask' || type === 'scriptTask') return 'system';
   if (type === 'userTask' || type === 'manualTask') return 'manual';
-  if (type.toLowerCase().includes('gateway')) return 'decision';
+  if (type.toLowerCase().includes('gateway')) return 'decision' as ColorKey;
   if (type === 'subProcess') return 'subprocess';
   return 'default';
 }

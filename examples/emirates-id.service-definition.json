@@ -1,0 +1,128 @@
+{
+  "version": "1.0",
+  "serviceCard": {
+    "serviceCode": "ICP-EID-001",
+    "nameEn": "Emirates ID — New Application (Residents)",
+    "nameAr": "طلب بطاقة الهوية الإماراتية — مقيمون",
+    "category": "life-event",
+    "owningEntity": "Federal Authority for Identity, Citizenship, Customs & Port Security (ICP)",
+    "channels": ["online", "app", "in-person"],
+    "targetSegment": ["resident"],
+    "eligibilityCriteria": [
+      "Foreign national holding a valid UAE residence visa",
+      "Must apply within 30 days of visa stamping to avoid fines",
+      "GCC nationals residing in the UAE",
+      "Applicant must be physically present in the UAE for biometric capture",
+      "Children under 15 must apply with a guardian"
+    ],
+    "requiredDocuments": [
+      { "name": "Valid passport", "format": "Original + PDF/JPG", "notes": "Must be valid for at least 6 months" },
+      { "name": "UAE residence visa page", "format": "PDF/JPG", "notes": "Stamped or e-visa printout" },
+      { "name": "Colored passport photo", "format": "JPG", "notes": "White background, 35×45 mm, taken within last 3 months" },
+      { "name": "Sponsor letter or contract", "format": "PDF", "notes": "Required for employment visa holders" },
+      { "name": "Birth certificate", "format": "PDF", "notes": "Attested — required for applicants under 15" }
+    ],
+    "journeySteps": [
+      { "step": 1, "title": "Login via UAE Pass", "description": "Authenticate via UAE Pass (Level 2). Personal data pre-filled automatically from visa records.", "estimatedMinutes": 2 },
+      { "step": 2, "title": "Verify Residence Status", "description": "System validates active residence visa with GDRFA/ICP records. Applicant confirms details.", "estimatedMinutes": 2 },
+      { "step": 3, "title": "Select Service Tier", "description": "Choose Standard (5–7 working days, free delivery) or Express (24–48 h, AED 150 surcharge).", "estimatedMinutes": 1 },
+      { "step": 4, "title": "Pay Fees", "description": "Pay online via card, UAE Pass Pay, or ADCB/FAB. E-receipt issued instantly.", "estimatedMinutes": 3 },
+      { "step": 5, "title": "Book Biometric Appointment", "description": "Select nearest ICP service center, date and time slot. Confirmation SMS/email sent.", "estimatedMinutes": 3 },
+      { "step": 6, "title": "Attend Biometric Session", "description": "Visit ICP center with original passport. Fingerprints (all 10) and digital photo captured on-site.", "estimatedMinutes": 20 },
+      { "step": 7, "title": "Card Production & Delivery", "description": "Emirates ID card printed and dispatched via Emirates Post (standard) or ready for collection (express)." }
+    ],
+    "fees": [
+      { "channel": "online", "applicantType": "1-year visa (Standard)", "amountAED": 170 },
+      { "channel": "online", "applicantType": "2-year visa (Standard)", "amountAED": 270 },
+      { "channel": "online", "applicantType": "3-year visa (Standard)", "amountAED": 370 },
+      { "channel": "online", "applicantType": "Any visa (Express)", "amountAED": 520 },
+      { "channel": "app", "applicantType": "1-year visa (Standard)", "amountAED": 170 },
+      { "channel": "app", "applicantType": "3-year visa (Standard)", "amountAED": 370 },
+      { "channel": "in-person", "applicantType": "Any validity (Standard)", "amountAED": 420 }
+    ],
+    "slaDays": { "online": 5, "app": 5, "in-person": 7 },
+    "legalBasis": "Federal Law No. 3 of 2003 on the Establishment of ICP; Federal Decree-Law No. 29 of 2021 on Residency and Foreigners' Affairs; Cabinet Resolution No. 25 of 2008 on Identity Card",
+    "transformationStage": "smart",
+    "uaePassEnabled": true,
+    "uaePassLevel": 2,
+    "outputDocuments": [
+      { "name": "Emirates ID Card", "format": "Physical Smart Card", "validityDays": 365, "deliveryMethod": "Emirates Post (standard) / ICP Center Collection (express)" },
+      { "name": "Payment Receipt", "format": "PDF", "deliveryMethod": "ICP Portal + Email + UAE Pass" },
+      { "name": "Appointment Confirmation", "format": "PDF + SMS", "deliveryMethod": "Email + SMS" }
+    ],
+    "lifeEvent": "Moving to UAE / New Residency",
+    "integrationApis": [
+      "UAE Pass API (L2 authentication)",
+      "ICP Residency Records (visa status validation)",
+      "GDRFA Integration (Abu Dhabi / Dubai visa data)",
+      "Appointment Booking System",
+      "Biometric Capture System (fingerprint + photo)",
+      "Emirates Post API (shipment tracking)",
+      "Payment Gateway (FAB, ADCB, UAE Pass Pay)",
+      "SMS/Email Notification Service"
+    ],
+    "addaComplianceLevel": "Level 3 — Fully Integrated (Federal Service)"
+  },
+  "bpmnProcess": {
+    "id": "Process_EmiratesID",
+    "name": "Emirates ID New Application — ICP",
+    "elements": [
+      { "type": "startEvent", "id": "start", "label": "Application Started", "colorKey": "happy" },
+      { "type": "serviceTask", "id": "task_uaepass_auth", "label": "Authenticate UAE Pass", "colorKey": "system" },
+      { "type": "serviceTask", "id": "task_validate_visa", "label": "Validate Residence Status", "colorKey": "system" },
+      {
+        "type": "exclusiveGateway", "id": "gw_visa_valid", "label": "Residence Valid?",
+        "branches": [
+          {
+            "condition": "Valid",
+            "colorKey": "happy",
+            "path": [
+              { "type": "userTask", "id": "task_select_tier", "label": "Select Service Tier", "colorKey": "manual" },
+              { "type": "userTask", "id": "task_pay_fees", "label": "Pay Application Fees", "colorKey": "manual" },
+              { "type": "userTask", "id": "task_book_appointment", "label": "Book Biometric Appointment", "colorKey": "manual" },
+              { "type": "userTask", "id": "task_attend_biometric", "label": "Attend Biometric Session", "colorKey": "manual" },
+              { "type": "serviceTask", "id": "task_process_biometric", "label": "Process Biometric Data", "colorKey": "system" },
+              {
+                "type": "exclusiveGateway", "id": "gw_biometric_ok", "label": "Biometrics Captured?",
+                "branches": [
+                  {
+                    "condition": "Success",
+                    "colorKey": "happy",
+                    "path": [
+                      { "type": "serviceTask", "id": "task_produce_card", "label": "Produce Emirates ID Card", "colorKey": "system" },
+                      { "type": "serviceTask", "id": "task_dispatch_card", "label": "Dispatch via Emirates Post", "colorKey": "system" },
+                      { "type": "endEvent", "id": "end_issued", "label": "Emirates ID Issued", "colorKey": "happy" }
+                    ]
+                  },
+                  {
+                    "condition": "Failed",
+                    "colorKey": "error",
+                    "path": [
+                      { "type": "userTask", "id": "task_reschedule", "label": "Reschedule Appointment", "colorKey": "error" },
+                      { "type": "endEvent", "id": "end_rescheduled", "label": "Appointment Rescheduled", "colorKey": "error" }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "condition": "Invalid / Expired",
+            "colorKey": "cancel",
+            "path": [
+              { "type": "serviceTask", "id": "task_notify_ineligible", "label": "Notify Ineligibility", "colorKey": "error" },
+              { "type": "endEvent", "id": "end_rejected", "label": "Application Rejected", "colorKey": "cancel" }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "generate": {
+    "serviceCard": true,
+    "bpmn": true,
+    "pdf": true,
+    "svg": true,
+    "standaloneHtml": true
+  }
+}

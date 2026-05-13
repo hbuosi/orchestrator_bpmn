@@ -1,0 +1,173 @@
+{
+  "version": "1.0",
+  "serviceCard": {
+    "serviceCode": "ICP-VR-001",
+    "nameEn": "UAE Residence Visa Renewal",
+    "nameAr": "تجديد تأشيرة الإقامة في الإمارات",
+    "category": "life-event",
+    "owningEntity": "Federal Authority for Identity, Citizenship, Customs & Port Security (ICP)",
+    "channels": ["online", "app", "in-person"],
+    "targetSegment": ["resident"],
+    "eligibilityCriteria": [
+      "Valid UAE residence visa holder within 30 days of expiry or already expired (grace period applies)",
+      "Applicant must be physically present in the UAE for biometric update (if required)",
+      "Valid employment contract, family book, or business license depending on visa category",
+      "Medical fitness certificate from an ICP-approved clinic (mandatory for first renewal or health-flagged cases)",
+      "Valid health insurance policy compliant with UAE federal requirements",
+      "Emirates ID must be renewed concurrently if expiring within 90 days"
+    ],
+    "requiredDocuments": [
+      { "name": "Valid passport", "format": "Original + PDF/JPG", "notes": "Must be valid for at least 6 months beyond visa validity" },
+      { "name": "Expiring or expired residence visa", "format": "Copy/PDF", "notes": "Current visa page or e-visa printout" },
+      { "name": "Medical fitness certificate", "format": "PDF (QR-verified)", "notes": "Issued by ICP-approved clinic; valid 3 months from issue date" },
+      { "name": "UAE health insurance card or policy", "format": "PDF", "notes": "Must meet DHA/HAAD/MOH minimum coverage requirements" },
+      { "name": "Sponsor NOC or employment contract", "format": "PDF", "notes": "Required for work visa holders; attested if employer is outside UAE" },
+      { "name": "Family book or marriage certificate", "format": "PDF (attested)", "notes": "Required for family/spouse visa renewals" }
+    ],
+    "journeySteps": [
+      { "step": 1, "title": "Login via UAE Pass", "description": "Authenticate using UAE Pass (Level 2). Personal and visa data pre-populated from ICP records.", "estimatedMinutes": 2 },
+      { "step": 2, "title": "Verify Visa & Status", "description": "System checks current visa validity, category, and sponsorship status with ICP and GDRFA databases.", "estimatedMinutes": 2 },
+      { "step": 3, "title": "Medical Fitness Check", "description": "Applicant visits an ICP-approved clinic for medical testing. Results transmitted electronically to ICP.", "estimatedMinutes": 60 },
+      { "step": 4, "title": "Submit & Pay Fees", "description": "Upload documents, confirm insurance compliance, and pay renewal fees via UAE Pass Pay, card, or approved gateway.", "estimatedMinutes": 5 },
+      { "step": 5, "title": "Biometric Update", "description": "If required, visit an ICP service center to update fingerprints and digital photo. Appointment booked inline.", "estimatedMinutes": 20 },
+      { "step": 6, "title": "Review & Approval", "description": "ICP adjudicates application. Status updates sent via SMS/email and UAE Pass notifications.", "estimatedMinutes": 1440 },
+      { "step": 7, "title": "Visa & Emirates ID Issuance", "description": "Renewed residency visa stamped in passport or issued as e-visa. Emirates ID dispatched via Emirates Post." }
+    ],
+    "fees": [
+      { "channel": "online", "applicantType": "1-year visa", "amountAED": 1010 },
+      { "channel": "online", "applicantType": "2-year visa", "amountAED": 1160 },
+      { "channel": "online", "applicantType": "3-year visa", "amountAED": 1310 },
+      { "channel": "app", "applicantType": "1-year visa", "amountAED": 1010 },
+      { "channel": "app", "applicantType": "3-year visa", "amountAED": 1310 },
+      { "channel": "in-person", "applicantType": "Any duration (+ typing fee)", "amountAED": 1260 }
+    ],
+    "slaDays": { "online": 5, "app": 5, "in-person": 7 },
+    "legalBasis": "Federal Decree-Law No. 29 of 2021 on Entry and Residence of Foreigners; Cabinet Resolution No. 65 of 2022 on Entry and Residency of Foreigners; Federal Law No. 3 of 2003 on ICP Establishment",
+    "transformationStage": "smart",
+    "uaePassEnabled": true,
+    "uaePassLevel": 2,
+    "outputDocuments": [
+      { "name": "Renewed UAE Residence Visa", "format": "E-visa PDF / Passport stamp", "validityDays": 730, "deliveryMethod": "ICP Portal + Email (e-visa) / ICP Service Center (stamp)" },
+      { "name": "Emirates ID Card", "format": "Physical Smart Card", "validityDays": 730, "deliveryMethod": "Emirates Post (standard) / ICP Center (express)" },
+      { "name": "Payment Receipt", "format": "PDF", "deliveryMethod": "ICP Portal + Email + UAE Pass" },
+      { "name": "Medical Fitness Certificate", "format": "PDF (QR-verified)", "deliveryMethod": "ICP-approved clinic → ICP records (automatic)" }
+    ],
+    "lifeEvent": "Residency Renewal / Legal Status Maintenance",
+    "integrationApis": [
+      "UAE Pass API (L2 authentication)",
+      "ICP Residency Records (visa status & history)",
+      "GDRFA Integration (Abu Dhabi & Dubai visa data)",
+      "MOH / DHA / HAAD Medical Fitness API",
+      "Health Insurance Verification API",
+      "Appointment Booking System",
+      "Biometric Capture System",
+      "Emirates Post API (ID card delivery tracking)",
+      "Payment Gateway (FAB, ADCB, UAE Pass Pay)",
+      "SMS/Email Notification Service"
+    ],
+    "addaComplianceLevel": "Level 3 — Fully Integrated (Federal Service)"
+  },
+  "bpmnProcess": {
+    "id": "Process_VisaRenewal",
+    "name": "UAE Residence Visa Renewal — ICP",
+    "elements": [
+      { "type": "startEvent", "id": "start", "label": "Renewal Initiated", "colorKey": "happy" },
+      { "type": "serviceTask", "id": "task_uaepass", "label": "Authenticate UAE Pass", "colorKey": "system" },
+      { "type": "serviceTask", "id": "task_verify_visa", "label": "Verify Visa Status", "colorKey": "system" },
+      {
+        "type": "exclusiveGateway", "id": "gw_visa_eligible", "label": "Eligible for Renewal?",
+        "branches": [
+          {
+            "condition": "Eligible",
+            "colorKey": "happy",
+            "path": [
+              { "type": "userTask", "id": "task_medical", "label": "Complete Medical Fitness", "colorKey": "manual" },
+              { "type": "serviceTask", "id": "task_check_medical", "label": "Verify Medical Results", "colorKey": "system" },
+              {
+                "type": "exclusiveGateway", "id": "gw_medical_ok", "label": "Medical Cleared?",
+                "branches": [
+                  {
+                    "condition": "Cleared",
+                    "colorKey": "happy",
+                    "path": [
+                      { "type": "serviceTask", "id": "task_check_insurance", "label": "Verify Insurance Compliance", "colorKey": "system" },
+                      {
+                        "type": "exclusiveGateway", "id": "gw_insurance_ok", "label": "Insurance Valid?",
+                        "branches": [
+                          {
+                            "condition": "Valid",
+                            "colorKey": "happy",
+                            "path": [
+                              { "type": "userTask", "id": "task_upload_docs", "label": "Upload Documents", "colorKey": "manual" },
+                              { "type": "userTask", "id": "task_pay", "label": "Pay Renewal Fees", "colorKey": "manual" },
+                              {
+                                "type": "exclusiveGateway", "id": "gw_biometric", "label": "Biometric Update Required?",
+                                "branches": [
+                                  {
+                                    "condition": "Required",
+                                    "colorKey": "manual",
+                                    "path": [
+                                      { "type": "userTask", "id": "task_book_biometric", "label": "Book Biometric Appointment", "colorKey": "manual" },
+                                      { "type": "userTask", "id": "task_attend_biometric", "label": "Attend Biometric Session", "colorKey": "manual" },
+                                      { "type": "serviceTask", "id": "task_adjudicate_bio", "label": "Adjudicate Application", "colorKey": "system" },
+                                      { "type": "serviceTask", "id": "task_issue_bio", "label": "Issue Visa & Emirates ID", "colorKey": "system" },
+                                      { "type": "endEvent", "id": "end_success_bio", "label": "Visa Renewed", "colorKey": "happy" }
+                                    ]
+                                  },
+                                  {
+                                    "condition": "Not Required",
+                                    "colorKey": "happy",
+                                    "path": [
+                                      { "type": "serviceTask", "id": "task_adjudicate", "label": "Adjudicate Application", "colorKey": "system" },
+                                      { "type": "serviceTask", "id": "task_issue", "label": "Issue Visa & Emirates ID", "colorKey": "system" },
+                                      { "type": "endEvent", "id": "end_success", "label": "Visa Renewed", "colorKey": "happy" }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "condition": "Invalid / Expired",
+                            "colorKey": "error",
+                            "path": [
+                              { "type": "userTask", "id": "task_update_insurance", "label": "Update Insurance Policy", "colorKey": "error" },
+                              { "type": "endEvent", "id": "end_insurance_pending", "label": "Pending Insurance Update", "colorKey": "error" }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "condition": "Failed",
+                    "colorKey": "error",
+                    "path": [
+                      { "type": "serviceTask", "id": "task_notify_medical_fail", "label": "Notify Medical Failure", "colorKey": "error" },
+                      { "type": "endEvent", "id": "end_medical_fail", "label": "Application On Hold", "colorKey": "error" }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "condition": "Ineligible / Banned",
+            "colorKey": "cancel",
+            "path": [
+              { "type": "serviceTask", "id": "task_notify_ineligible", "label": "Notify Ineligibility", "colorKey": "error" },
+              { "type": "endEvent", "id": "end_rejected", "label": "Application Rejected", "colorKey": "cancel" }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "generate": {
+    "serviceCard": true,
+    "bpmn": true,
+    "pdf": true,
+    "svg": true,
+    "standaloneHtml": true
+  }
+}

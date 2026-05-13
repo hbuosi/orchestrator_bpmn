@@ -24,13 +24,14 @@ if (filtered.length === 0) {
   process.exit(1);
 }
 
-// Prefer: bpmn-viewer.html first, then service-card.html, then anything
+// Prefer: combined.html first (both card + BPMN), then standalone viewer, then card, etc.
 const priority = (f: string) => {
-  if (f.endsWith('bpmn-viewer.html')) return 0;
-  if (f.endsWith('service-card.html')) return 1;
-  if (f.endsWith('.html')) return 2;
-  if (f.endsWith('.pdf')) return 3;
-  return 4;
+  if (f.endsWith('combined.html')) return 0;
+  if (f.endsWith('bpmn-viewer.html')) return 1;
+  if (f.endsWith('service-card.html')) return 2;
+  if (f.endsWith('.html')) return 3;
+  if (f.endsWith('.pdf')) return 4;
+  return 5;
 };
 
 const toOpen = filtered.sort((a, b) => priority(a) - priority(b)).slice(0, 2);

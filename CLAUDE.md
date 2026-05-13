@@ -17,13 +17,21 @@ All generation is programmatic. No manual diagram editing required. Output: PDF/
 | Runtime | Bun | - |
 | Language | TypeScript strict | - |
 | BPMN structure | JSON intermediate → XML | custom schema (see below) |
-| BPMN XML parse/write | bpmn-moddle | `bpmn-moddle` |
-| BPMN auto-layout | Eliminate all overlaps | `bpmn-auto-layout` |
-| BPMN render | bpmn-js headless | `bpmn-js` |
-| Color API | modeling.setColor() | bpmn-js Modeling module |
-| PDF export | Puppeteer headless Chrome | `puppeteer` |
-| LLM structured output | Claude API + Zod | `@anthropic-ai/sdk` + `zod` |
+| BPMN XML parse/write | Custom generator (no moddle) | `bpmn-xml.generator.ts` |
+| BPMN layout | Custom recursive engine (no bpmn-auto-layout) | `bpmn-xml.generator.ts` |
+| BPMN render | bpmn-navigated-viewer (CDN @18.16.0) | `bpmn-js` |
+| Color API | bioc: + color: XML attributes (regex injection) | `bpmn-colors.ts` |
+| PDF export CLI | Puppeteer headless Chrome | `puppeteer` |
+| PDF export browser | SVG → blob URL → window.print() (BPMN); innerHTML → blob (Card) | in-template JS |
+| LLM structured output | Claude API + Zod + self-correction loop | `@anthropic-ai/sdk` + `zod` |
+| Web app | Next.js 14 App Router + SSE streaming | `next` |
 | Validation | bpmnlint | `bpmnlint` |
+
+### Web App (Vercel)
+- URL: https://web-three-blush-94.vercel.app
+- Entry: `web/` directory — Next.js, no Puppeteer
+- API route: `POST /api/generate` → SSE stream → combined HTML
+- Env var required: `ANTHROPIC_API_KEY`
 
 ---
 
@@ -52,13 +60,25 @@ gsd-service-orchestrator/
 │   │   ├── claude.client.ts               # Anthropic SDK wrapper w/ prompt cache
 │   │   └── bpmn-from-text.ts              # text description → JSON BPMN (structured output)
 │   ├── templates/
-│   │   ├── service-card.html.ts           # HTML template literal
-│   │   └── bpmn-viewer.html.ts            # standalone HTML with embedded bpmn-js
+│   │   ├── service-card.html.ts           # HTML template — standalone government style card
+│   │   ├── bpmn-viewer.html.ts            # standalone BPMN viewer (navigated-viewer@18)
+│   │   └── combined-viewer.html.ts        # ★ PRIMARY — two-column editorial: card + BPMN
 │   └── constants/
 │       └── colors.ts                      # BPMN color palette constants
 ├── examples/
-│   └── trade-license.service-definition.json
-└── output/                                # gitignored — generated files land here
+│   ├── emirates-id.service-definition.json
+│   └── uae-visa-renewal.service-definition.json
+├── output/                                # gitignored — generated files land here
+└── web/                                   # Next.js web app (Vercel)
+    ├── app/
+    │   ├── page.tsx                       # form UI + SSE progress + iframe result
+    │   ├── layout.tsx
+    │   └── api/generate/route.ts          # SSE streaming API → combined HTML
+    └── lib/                               # mirrors src/ without Puppeteer deps
+        ├── constants/colors.ts
+        ├── schemas/
+        ├── generators/
+        └── templates/combined-viewer.html.ts
 ```
 
 ---
@@ -68,18 +88,25 @@ gsd-service-orchestrator/
 ```typescript
 // src/constants/colors.ts
 export const BPMN_COLORS = {
-  happy:        { fill: '#C8E6C9', stroke: '#2E7D32' },  // green  — happy path
-  error:        { fill: '#FFE0B2', stroke: '#E65100' },  // orange — errors/exceptions
-  cancel:       { fill: '#FFCDD2', stroke: '#C62828' },  // red    — cancellation/termination
-  compensation: { fill: '#FFF9C4', stroke: '#F57F17' },  // yellow — compensation flows
-  system:       { fill: '#BBDEFB', stroke: '#1565C0' },  // blue   — automated/service tasks
-  manual:       { fill: '#FAFAFA', stroke: '#424242' },  // white  — human/manual tasks
-  subprocess:   { fill: '#EDE7F6', stroke: '#4527A0' },  // lavender — subprocesses
-  lane_header:  { fill: '#1565C0', stroke: '#0D47A1', label: '#FFFFFF' },
+  happy:        { fill: '#E8F5E9', stroke: '#2E7D32' },  // green       — start / happy path
+  happy_end:    { fill: '#C8E6C9', stroke: '#1B5E20' },  // dark green  — success end event
+  error:        { fill: '#FFE0B2', stroke: '#E65100' },  // orange      — exceptions / warnings
+  cancel:       { fill: '#FFCDD2', stroke: '#C62828' },  // red         — cancellation / error end
+  compensation: { fill: '#FFF9C4', stroke: '#F57F17' },  // yellow      — compensation flows
+  system:       { fill: '#E0F7FA', stroke: '#00838F' },  // teal        — automated service tasks
+  manual:       { fill: '#F3E5F5', stroke: '#6A1B9A' },  // purple      — human / user tasks
+  decision:     { fill: '#E3F2FD', stroke: '#1565C0' },  // blue        — gateways / decisions
+  subprocess:   { fill: '#EDE7F6', stroke: '#4527A0' },  // lavender    — subprocesses
+  lane_header:  { fill: '#1565C0', stroke: '#0D47A1', labelColor: '#FFFFFF' },
+  default:      { fill: '#FFFFFF', stroke: '#333333' },
 } as const;
 ```
 
-Colors are stored directly in BPMNDI XML via `color:background-color` / `color:border-color` attributes (BPMN in Color Spec). Also applied at render-time via `modeling.setColor()`.
+Colors are stored in BPMNDI XML via both:
+- `color:background-color` / `color:border-color` — OMG MIWG 2014 spec (persistent, tool-agnostic)
+- `bioc:fill` / `bioc:stroke` — bpmn-io legacy format (written alongside for bpmn-js compatibility)
+
+Both are written by `bpmn-colors.ts` post-processing step. If `colorKey` is omitted in JSON, color is auto-inferred from element type: `startEvent→happy`, `endEvent→happy_end`, `serviceTask/scriptTask→system`, `userTask→manual`, `*Gateway→decision`, `subProcess→subprocess`.
 
 ---
 
@@ -174,37 +201,65 @@ service-definition.json
 ## BPMN Layout Rules (enforced programmatically)
 
 - Flow direction: **left → right**
-- Happy path: **central horizontal spine**, exceptions branch up/down
-- bpmn-auto-layout handles all positioning — never hardcode coordinates
-- Minimum element spacing: 30px (auto-layout default respects this)
-- Long cross-diagram connections: use **Link Events**, not long sequence flows
+- Happy path: **central horizontal spine** (ORIGIN_Y = 240), exceptions branch up/down
+- Custom recursive `layoutPath()` in `bpmn-xml.generator.ts` handles all positioning — no bpmn-auto-layout
+- Generates both `BPMNShape` and `BPMNEdge` (with L-shaped waypoints) in one pass
+- Converging gateway auto-created only when non-terminal branches exist (end events never connect to merge)
 - Task labels: max 4 words, verb+object format ("Validate Documents")
 - Gateway labels: question format ("Documents Complete?")
-- All gateways must have **labeled outgoing flows**
+- All gateways must have **labeled outgoing flows** (condition field on each branch)
+
+### Label Overlap Prevention (critical — never skip)
+
+All sequence flow condition labels must be positioned **off** the flow line and **never overlap** element boxes.
+Two constants control this:
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `GAP_X` | 60 | Horizontal gap between regular sequential elements |
+| `BRANCH_GAP_X` | 150 | Wider gap: gateway right edge → first branch element; creates a safe corridor for condition labels |
+
+Label placement algorithm (`labelBounds()` in `bpmn-xml.generator.ts`):
+
+- **Straight (horizontal) flow**: label centered above the line midpoint (`y - 18px`)
+- **L-shaped (gateway→branch) flow**: label placed to the right of the vertical segment, vertically centered between y1 and y2
+  - `corridorW = max(x2 - midX - 12, 30)` — space between vertical segment and left edge of target element
+  - Label width capped to `corridorW` so it never enters the target box
+  - When `rawW > corridorW`, height set to 28px (2-line wrap in bpmn-js) instead of 14px
+
+Both `src/generators/bpmn-xml.generator.ts` and `web/lib/generators/bpmn-xml.generator.ts` **must stay in sync** — any change to either file must be applied to both.
 
 ---
 
 ## Anti-Patterns (never do)
 
 - Never ask LLM to generate BPMN XML directly — always go through JSON intermediate
-- Never hardcode DI coordinates — always use `bpmn-auto-layout`
+- Never use `bpmn-auto-layout` or `bpmn-moddle` — replaced by custom generator
+- Never use `moddle.fromXML → toXML` round-trip for color injection — it drops BPMNEdge elements
 - Never use Swimlanes within a single Pool — use separate Pools for distinct participants
 - Never omit Start/End events
-- Never use more than 4 colors per diagram
+- Never use `estimatedMinutes: null` in journeySteps — omit the field if unknown
 - Never embed base64 images in BPMN XML
 - Never call `Modeling#setColor` before `importXML` resolves
+- Never use `waitUntil: 'networkidle0'` in `page.setContent()` — only valid for `page.goto()`
 
 ---
 
 ## Key Commands
 
 ```bash
-bun run generate <input.json>           # generate all outputs
+# CLI (Bun)
+bun run generate <input.json>           # generate all outputs from JSON
+bun run generate:from-text "..."        # generate from natural language (needs ANTHROPIC_API_KEY)
 bun run generate:bpmn <input.json>      # BPMN only
 bun run generate:card <input.json>      # service card only
 bun run validate <input.json>           # validate against schemas
 bun run preview                         # open output in browser
 bun test                                # run tests
+
+# Web app (Next.js)
+cd web && npm run dev                   # local dev server
+cd web && vercel --prod                 # deploy to Vercel
 ```
 
 ---
@@ -228,13 +283,26 @@ const response = await anthropic.messages.create({
 
 ```
 output/
-  {serviceCode}-service-card.html
+  {serviceCode}-combined.html        # ★ PRIMARY — two-column editorial: card left + BPMN right
+  {serviceCode}-combined.pdf         # A3 landscape (Puppeteer, CLI only)
+  {serviceCode}-service-card.html    # standalone government service card (UAE TDRA style)
   {serviceCode}-service-card.pdf
-  {serviceCode}-bpmn.xml
+  {serviceCode}-bpmn.xml             # BPMN 2.0 XML with bioc: + color: attributes
   {serviceCode}-bpmn.svg
   {serviceCode}-bpmn.pdf
-  {serviceCode}-bpmn-viewer.html     # standalone, embeds bpmn-js + XML
+  {serviceCode}-bpmn-viewer.html     # standalone BPMN viewer with toolbar
 ```
+
+`bun run preview` opens `{code}-combined.html` first (falls back to bpmn-viewer → service-card → any HTML).
+
+## Export Buttons in Combined Viewer
+
+| Button | What it exports |
+|--------|----------------|
+| ↓ BPMN PDF | BPMN diagram only — A3 landscape via SVG → blob → window.print() |
+| ↓ SVG | BPMN diagram as SVG file download |
+| ↓ BPMN XML | BPMN 2.0 XML file download |
+| ↓ Card PDF | Service Card only — A4 portrait via innerHTML → blob → window.print() |
 
 ---
 
