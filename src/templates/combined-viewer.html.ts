@@ -117,19 +117,22 @@ export function combinedViewerTemplate(card: ServiceCard, bpmnXml: string): stri
   --muted: #6b6b5e;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
 body {
   background: var(--paper);
   color: var(--ink);
   font-family: "Inter", -apple-system, sans-serif;
   font-size: 15px;
   line-height: 1.55;
+  display: flex;
+  flex-direction: column;
 }
 .masthead {
   border-bottom: 3px double var(--ink);
   padding: 32px 48px 20px;
   background: var(--paper);
-  position: sticky; top: 0; z-index: 10;
+  flex-shrink: 0;
+  z-index: 10;
 }
 .kicker {
   font-family: "JetBrains Mono", monospace;
@@ -161,15 +164,19 @@ h1.title {
 .layout {
   display: grid;
   grid-template-columns: 1fr 1.4fr;
-  min-height: calc(100vh - 130px);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
-@media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) {
+  .layout { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+}
 .card {
   padding: 40px 44px;
   border-right: 1px solid var(--rule);
   background: var(--paper);
   overflow-y: auto;
-  max-height: calc(100vh - 130px);
+  min-height: 0;
 }
 .meta-grid {
   display: grid; grid-template-columns: 100px 1fr;
@@ -225,6 +232,16 @@ tr:nth-child(even) td { background: var(--paper-2); }
   background: linear-gradient(135deg, #fafaf6 0%, #f5f4ec 100%);
   position: relative;
   overflow: hidden;
+  min-height: 0;
+}
+.diagram-wrap:fullscreen,
+.diagram-wrap:-webkit-full-screen {
+  background: #fafaf6;
+}
+.diagram-wrap:fullscreen #diagram,
+.diagram-wrap:-webkit-full-screen #diagram {
+  height: 100%;
+  min-height: unset;
 }
 .diagram-toolbar {
   position: absolute; top: 16px; right: 16px;
@@ -276,15 +293,17 @@ footer {
   font-family: "JetBrains Mono", monospace;
   font-size: 11px; color: var(--muted);
   display: flex; justify-content: space-between; align-items: center;
+  flex-shrink: 0;
 }
 footer a { color: var(--accent); text-decoration: none; }
 footer a:hover { text-decoration: underline; }
 @media print {
   @page { size: A3 landscape; margin: 10mm; }
-  .masthead { position: static; }
+  html, body { height: auto; overflow: visible; }
+  .masthead { flex-shrink: 0; }
   .diagram-toolbar, .legend, .verify { display: none !important; }
-  .layout { min-height: unset; display: grid; grid-template-columns: 1fr 1.4fr; }
-  .card { max-height: unset; overflow: visible; }
+  .layout { flex: none; min-height: unset; display: grid; grid-template-columns: 1fr 1.4fr; overflow: visible; }
+  .card { min-height: unset; overflow: visible; }
   #diagram { min-height: 500px; }
   footer { display: none; }
 }
@@ -325,6 +344,7 @@ footer a:hover { text-decoration: underline; }
       <button class="tool-btn outline" id="zoom-fit">FIT</button>
       <button class="tool-btn outline" id="zoom-in">+</button>
       <button class="tool-btn outline" id="zoom-out">−</button>
+      <button class="tool-btn outline" id="fullscreen" title="Toggle fullscreen">⛶</button>
       <button class="tool-btn" id="export-pdf">↓ BPMN PDF</button>
       <button class="tool-btn" id="export-svg">↓ SVG</button>
       <button class="tool-btn" id="export-bpmn">↓ BPMN XML</button>
@@ -369,6 +389,22 @@ const viewer = new BpmnJS({ container: '#diagram' });
 document.getElementById('zoom-fit').onclick = () => viewer.get('canvas').zoom('fit-viewport', 'auto');
 document.getElementById('zoom-in').onclick  = () => viewer.get('zoomScroll').stepZoom(1);
 document.getElementById('zoom-out').onclick = () => viewer.get('zoomScroll').stepZoom(-1);
+
+const diagramWrap = document.querySelector('.diagram-wrap');
+document.getElementById('fullscreen').onclick = () => {
+  if (!document.fullscreenElement) {
+    diagramWrap.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen();
+  }
+};
+document.addEventListener('fullscreenchange', () => {
+  const btn = document.getElementById('fullscreen');
+  btn.textContent = document.fullscreenElement ? '✕' : '⛶';
+  if (!document.fullscreenElement) {
+    viewer.get('canvas').zoom('fit-viewport', 'auto');
+  }
+});
 
 document.getElementById('export-pdf').onclick = async () => {
   const { svg } = await viewer.saveSVG();

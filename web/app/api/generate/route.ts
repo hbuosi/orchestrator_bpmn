@@ -27,8 +27,17 @@ BPMN structure rules:
 - All gateways must have labeled branches (condition field)
 - Task labels: verb + object format, max 4 words
 - Gateway labels: question format ending with "?"
+- Branch conditions: MAXIMUM 2 words — use only short decisive words like "Yes", "No", "Valid", "Invalid", "Approved", "Rejected", "Complete", "Incomplete". NEVER use phrases or sentences.
 - Always include a startEvent and at least one endEvent
 - Exception paths end with endEvent (type: "endEvent")
+
+SERVICE CARD CONSTRAINTS (hard limits — never exceed):
+- journeySteps: MAXIMUM 7 steps. If the process has more, consolidate related actions into fewer steps.
+- channels: only "online" | "app" | "call-center" | "in-person"
+- targetSegment: only "citizen" | "resident" | "business" | "visitor"
+- category: only "life-event" | "business" | "informational"
+- transformationStage: only "paper" | "digital" | "smart" | "proactive"
+- uaePassLevel: only 1, 2, or 3 (integer) — omit if uaePassEnabled is false
 
 Output ONLY raw JSON (no markdown, no code blocks) exactly matching this structure:
 {
@@ -75,6 +84,49 @@ Output ONLY raw JSON (no markdown, no code blocks) exactly matching this structu
   "generate": {"serviceCard":true,"bpmn":true,"pdf":true,"svg":true,"standaloneHtml":true}
 }`;
 
+const MAX_RETRIES = 3;
+
+async function generateDefinitionWithRetry(text: string): Promise<ReturnType<typeof ServiceDefinitionSchema.parse>> {
+  let lastError = '';
+  let lastOutput = '';
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const userContent = attempt === 1
+      ? `Generate a complete service definition for the following process:\n\n${text}`
+      : `Your previous output failed validation.\n\nValidation error:\n${lastError}\n\nYour previous output:\n${lastOutput}\n\nFix ALL validation errors and return the corrected complete JSON. Pay special attention to array size limits (journeySteps: max 7).`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 8096,
+      system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+      messages: [{ role: 'user', content: userContent }],
+    });
+
+    lastOutput = response.content
+      .filter(b => b.type === 'text')
+      .map(b => (b as { type: 'text'; text: string }).text)
+      .join('');
+
+    const jsonStr = lastOutput
+      .replace(/^```(?:json)?\s*/m, '')
+      .replace(/\s*```\s*$/m, '')
+      .trim();
+
+    try {
+      const parsed = JSON.parse(jsonStr);
+      return ServiceDefinitionSchema.parse(parsed);
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      console.error(`[generate] attempt ${attempt}/${MAX_RETRIES} failed: ${lastError.slice(0, 200)}`);
+      if (attempt === MAX_RETRIES) {
+        throw new Error(`Generation failed after ${MAX_RETRIES} attempts. Last error: ${lastError}`);
+      }
+    }
+  }
+
+  throw new Error('unreachable');
+}
+
 function send(controller: ReadableStreamDefaultController, encoder: TextEncoder, data: object) {
   controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
 }
@@ -89,31 +141,9 @@ export async function POST(req: NextRequest) {
       try {
         send(controller, encoder, { type: 'progress', step: 1, message: 'Analyzing your process description...' });
 
-        const response = await anthropic.messages.create({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 8096,
-          system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-          messages: [{
-            role: 'user',
-            content: `Generate a complete service definition for the following process:\n\n${text}`,
-          }],
-        });
+        const definition = await generateDefinitionWithRetry(text);
 
         send(controller, encoder, { type: 'progress', step: 2, message: 'Parsing service definition...' });
-
-        const responseText = response.content
-          .filter(b => b.type === 'text')
-          .map(b => (b as { type: 'text'; text: string }).text)
-          .join('');
-
-        // Strip markdown code fences if Claude added them
-        const jsonStr = responseText
-          .replace(/^```(?:json)?\s*/m, '')
-          .replace(/\s*```\s*$/m, '')
-          .trim();
-
-        const parsed = JSON.parse(jsonStr);
-        const definition = ServiceDefinitionSchema.parse(parsed);
 
         send(controller, encoder, { type: 'progress', step: 3, message: 'Generating BPMN diagram...' });
 

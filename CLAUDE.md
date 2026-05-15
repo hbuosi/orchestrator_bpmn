@@ -221,11 +221,14 @@ Two constants control this:
 
 Label placement algorithm (`labelBounds()` in `bpmn-xml.generator.ts`):
 
-- **Straight (horizontal) flow**: label centered above the line midpoint (`y - 18px`)
-- **L-shaped (gateway→branch) flow**: label placed to the right of the vertical segment, vertically centered between y1 and y2
-  - `corridorW = max(x2 - midX - 12, 30)` — space between vertical segment and left edge of target element
-  - Label width capped to `corridorW` so it never enters the target box
-  - When `rawW > corridorW`, height set to 28px (2-line wrap in bpmn-js) instead of 14px
+- **Straight (horizontal) flow**: label centered above the line midpoint (`y - 28px`)
+- **L-shaped (gateway→branch) flow**: label anchored to the **first horizontal segment** (x1→midX), never on the vertical segment
+  - Up-branches (`y2 < y1`): label ABOVE the outgoing horizontal → `y = y1 - lh - 6`
+  - Down-branches (`y2 > y1`): label BELOW the outgoing horizontal → `y = y1 + 6`
+  - `availW = midX - x1 - 8` — usable width of first horizontal segment
+  - Label width: `min(max(rawW, 30), max(availW, 30))`
+  - Height: 28px when `rawW > availW` (2-line wrap), else 16px
+  - Converging flows (branch → join gateway) never have labels, so this only applies to diverging (gateway → branch)
 
 Both `src/generators/bpmn-xml.generator.ts` and `web/lib/generators/bpmn-xml.generator.ts` **must stay in sync** — any change to either file must be applied to both.
 

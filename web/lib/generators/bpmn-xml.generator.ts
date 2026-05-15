@@ -19,7 +19,7 @@ const ORIGIN_X = 30;
 const ORIGIN_Y = 240;
 
 interface Bounds { x: number; y: number; w: number; h: number; }
-interface FlowSpec { id: string; source: string; target: string; name?: string; }
+interface FlowSpec { id: string; source: string; target: string; name?: string; bend?: 'tgt'; }
 
 interface LayoutCtx {
   shapes: Map<string, Bounds>;
@@ -129,7 +129,7 @@ function layoutPath(
         ctx.shapeTypes.set(joinId, 'exclusiveGateway');
         ctx.shapes.set(joinId, { x: maxEndX, y: cy - size.h / 2, w: size.w, h: size.h });
         for (const lid of nonTerminalEnds) {
-          ctx.flows.push({ id: `Flow_${++ctx.flowN}`, source: lid, target: joinId });
+          ctx.flows.push({ id: `Flow_${++ctx.flowN}`, source: lid, target: joinId, bend: 'tgt' });
         }
         prev = joinId;
         cur = maxEndX + size.w + GAP_X;
@@ -160,11 +160,12 @@ function flowGeometry(src: Bounds, tgt: Bounds): {
   return { x1, y1, x2, y2, midX, straight };
 }
 
-function waypoints(src: Bounds, tgt: Bounds): string {
+function waypoints(src: Bounds, tgt: Bounds, bend?: 'tgt'): string {
   const { x1, y1, x2, y2, midX, straight } = flowGeometry(src, tgt);
   const pts = (pairs: [number, number][]): string =>
     pairs.map(([x, y]) => `        <di:waypoint x="${x}" y="${y}" />`).join('\n');
   if (straight) return pts([[x1, y1], [x2, y2]]);
+  if (bend === 'tgt') return pts([[x1, y1], [x2, y1], [x2, y2]]);
   return pts([[x1, y1], [midX, y1], [midX, y2], [x2, y2]]);
 }
 
@@ -174,15 +175,20 @@ function labelBounds(
   if (!name) return null;
   const { x1, y1, x2, y2, midX, straight } = flowGeometry(src, tgt);
   if (straight) {
-    const lw = Math.max(name.length * 6 + 10, 40);
-    return { x: Math.round(midX - lw / 2), y: y1 - 18, w: lw, h: 14 };
+    const lw = Math.max(name.length * 7 + 12, 50);
+    return { x: Math.round(midX - lw / 2), y: y1 - 28, w: lw, h: 18 };
   }
-  const corridorW = Math.max(x2 - midX - 12, 30);
-  const rawW = name.length * 6 + 10;
+  // L-shaped gateway→branch: use the FULL BRANCH_GAP_X corridor for label width so that
+  // even long condition text fits in 1-2 lines and never overflows into the opposite label.
+  // Anchored above the outgoing horizontal for up-branches, below for down-branches.
+  const corridorW = Math.max(x2 - x1 - 16, 60);
+  const rawW = name.length * 7 + 12;
   const lw = Math.min(rawW, corridorW);
-  const lh = rawW > corridorW ? 28 : 14;
-  const my = Math.round((y1 + y2) / 2);
-  return { x: midX + 6, y: my - Math.round(lh / 2), w: lw, h: lh };
+  // Word-wrap only fills ~75% of box width on average; use that factor for line-count estimate.
+  const lines = Math.max(Math.ceil(rawW / (corridorW * 0.75)), 1);
+  const lh = lines === 1 ? 16 : lines * 15;
+  const goingUp = y2 < y1;
+  return { x: x1 + 8, y: goingUp ? y1 - lh - 6 : y1 + 6, w: lw, h: lh };
 }
 
 function collectElements(elements: BpmnElement[], out: BpmnElement[] = []): BpmnElement[] {
@@ -260,7 +266,7 @@ export async function generateBpmnXml(process: BpmnProcess): Promise<string> {
       : '';
     edgeLines.push(
       `      <bpmndi:BPMNEdge id="${f.id}_di" bpmnElement="${f.id}">\n` +
-      waypoints(src, tgt) +
+      waypoints(src, tgt, f.bend) +
       labelXml + '\n' +
       `      </bpmndi:BPMNEdge>`
     );
