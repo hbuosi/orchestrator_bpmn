@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 
 type State = 'idle' | 'loading' | 'complete' | 'error';
+type InputMode = 'text' | 'file';
 
 const STEPS = [
   'Analyzing your process description...',
@@ -22,21 +23,35 @@ export default function Home() {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [text, setText] = useState('');
+  const [inputMode, setInputMode] = useState<InputMode>('text');
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
+  const isReady = inputMode === 'text' ? text.trim() !== '' : uploadedFile !== null;
+
   async function generate() {
-    if (!text.trim()) return;
+    if (!isReady) return;
     setState('loading');
     setStep(0);
     setStepMsg(STEPS[0]!);
     setError('');
 
     try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-      });
+      let res: Response;
+
+      if (inputMode === 'file' && uploadedFile) {
+        const formData = new FormData();
+        formData.append('file', uploadedFile);
+        res = await fetch('/api/generate', { method: 'POST', body: formData });
+      } else {
+        res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+      }
 
       if (!res.ok || !res.body) throw new Error(`Server error: ${res.status}`);
 
@@ -82,6 +97,32 @@ export default function Home() {
     setBlobUrl(null);
     setState('idle');
   }
+
+  function handleFileSelect(file: File) {
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+    if (!['xlsx', 'xls', 'csv', 'ods'].includes(ext)) {
+      setError('Unsupported file type. Please upload .xlsx, .xls, .csv, or .ods');
+      setState('error');
+      return;
+    }
+    setUploadedFile(file);
+    setError('');
+    if (state === 'error') setState('idle');
+  }
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFileSelect(file);
+  }, []);
+
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const onDragLeave = useCallback(() => setIsDragging(false), []);
 
   if (state === 'complete' && blobUrl) {
     return (
@@ -152,64 +193,187 @@ export default function Home() {
           <span style={{ color: 'var(--accent)' }}>We generate the rest.</span>
         </h1>
         <p style={{ color: 'var(--muted)', fontSize: 16, margin: 0, lineHeight: 1.6 }}>
-          Enter a government service or business process in plain language.
+          Enter a government service in plain language or upload a spreadsheet.
           Get a complete Service Card + BPMN 2.0 diagram, ready to export as A3 PDF.
         </p>
       </div>
 
       {/* Form */}
       <div style={{ width: '100%', maxWidth: 680 }}>
-        <div style={{ position: 'relative' }}>
-          <textarea
-            value={text}
-            onChange={e => setText(e.target.value)}
-            placeholder={EXAMPLE}
-            disabled={state === 'loading'}
-            rows={8}
-            style={{
-              width: '100%',
-              padding: '20px 24px',
-              fontSize: 14.5,
-              lineHeight: 1.65,
-              color: 'var(--ink)',
-              background: '#fff',
-              border: '2px solid var(--rule)',
-              borderRadius: 0,
-              outline: 'none',
-              resize: 'vertical',
-              fontFamily: 'inherit',
-              transition: 'border-color 0.15s',
-            }}
-            onFocus={e => { e.target.style.borderColor = 'var(--ink)'; }}
-            onBlur={e => { e.target.style.borderColor = 'var(--rule)'; }}
-          />
+
+        {/* Mode tabs */}
+        <div style={{
+          display: 'flex', marginBottom: 0,
+          borderBottom: '2px solid var(--rule)',
+        }}>
+          {(['text', 'file'] as InputMode[]).map(mode => (
+            <button
+              key={mode}
+              onClick={() => { setInputMode(mode); setError(''); if (state === 'error') setState('idle'); }}
+              style={{
+                padding: '10px 20px',
+                background: 'transparent',
+                border: 'none',
+                borderBottom: inputMode === mode ? '2px solid var(--ink)' : '2px solid transparent',
+                marginBottom: -2,
+                cursor: 'pointer',
+                fontFamily: '"JetBrains Mono", monospace',
+                fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em',
+                color: inputMode === mode ? 'var(--ink)' : 'var(--muted)',
+                fontWeight: inputMode === mode ? 600 : 400,
+                transition: 'color 0.15s',
+              }}
+            >
+              {mode === 'text' ? '✎ Text' : '↑ Upload File'}
+            </button>
+          ))}
         </div>
+
+        {/* Text input */}
+        {inputMode === 'text' && (
+          <div style={{ position: 'relative' }}>
+            <textarea
+              value={text}
+              onChange={e => setText(e.target.value)}
+              placeholder={EXAMPLE}
+              disabled={state === 'loading'}
+              rows={8}
+              style={{
+                width: '100%',
+                padding: '20px 24px',
+                fontSize: 14.5,
+                lineHeight: 1.65,
+                color: 'var(--ink)',
+                background: '#fff',
+                border: '2px solid var(--rule)',
+                borderTop: 'none',
+                borderRadius: 0,
+                outline: 'none',
+                resize: 'vertical',
+                fontFamily: 'inherit',
+                transition: 'border-color 0.15s',
+                boxSizing: 'border-box',
+              }}
+              onFocus={e => { e.target.style.borderColor = 'var(--ink)'; }}
+              onBlur={e => { e.target.style.borderColor = 'var(--rule)'; }}
+            />
+          </div>
+        )}
+
+        {/* File upload */}
+        {inputMode === 'file' && (
+          <div
+            onDrop={onDrop}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onClick={() => !uploadedFile && fileInputRef.current?.click()}
+            style={{
+              border: `2px ${isDragging ? 'solid' : 'dashed'} ${isDragging ? 'var(--ink)' : 'var(--rule)'}`,
+              borderTop: 'none',
+              background: isDragging ? 'var(--paper-2)' : '#fff',
+              padding: '40px 24px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 12,
+              cursor: uploadedFile ? 'default' : 'pointer',
+              transition: 'border-color 0.15s, background 0.15s',
+              minHeight: 160,
+              justifyContent: 'center',
+            }}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv,.ods"
+              style={{ display: 'none' }}
+              onChange={e => {
+                const file = e.target.files?.[0];
+                if (file) handleFileSelect(file);
+              }}
+            />
+
+            {!uploadedFile ? (
+              <>
+                <div style={{ fontSize: 32, lineHeight: 1 }}>📊</div>
+                <div style={{
+                  fontFamily: '"JetBrains Mono", monospace',
+                  fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.12em',
+                  color: 'var(--muted)',
+                }}>
+                  Drop file here or click to browse
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  Supports .xlsx · .xls · .csv · .ods — all sheets will be read
+                </div>
+              </>
+            ) : (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 16,
+                padding: '16px 20px',
+                background: 'var(--paper-2)',
+                border: '1.5px solid var(--rule)',
+                width: '100%',
+                boxSizing: 'border-box',
+              }}>
+                <span style={{ fontSize: 24 }}>📄</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontWeight: 500, fontSize: 14,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {uploadedFile.name}
+                  </div>
+                  <div style={{
+                    fontSize: 12, color: 'var(--muted)',
+                    fontFamily: '"JetBrains Mono", monospace',
+                    marginTop: 3,
+                  }}>
+                    {(uploadedFile.size / 1024).toFixed(1)} KB · ready to generate
+                  </div>
+                </div>
+                <button
+                  onClick={e => { e.stopPropagation(); setUploadedFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                  style={{
+                    background: 'transparent', border: '1.5px solid var(--rule)',
+                    cursor: 'pointer', padding: '4px 10px',
+                    fontFamily: '"JetBrains Mono", monospace',
+                    fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em',
+                    color: 'var(--muted)', flexShrink: 0,
+                  }}
+                >
+                  ✕ Remove
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         <div style={{ marginTop: 16, display: 'flex', gap: 12, alignItems: 'center' }}>
           <button
             onClick={generate}
-            disabled={state === 'loading' || !text.trim()}
+            disabled={state === 'loading' || !isReady}
             style={{
               padding: '14px 32px',
-              background: state === 'loading' ? 'var(--muted)' : 'var(--ink)',
+              background: state === 'loading' || !isReady ? 'var(--muted)' : 'var(--ink)',
               color: 'var(--paper)',
-              border: 'none', cursor: state === 'loading' ? 'default' : 'pointer',
+              border: 'none', cursor: state === 'loading' || !isReady ? 'default' : 'pointer',
               fontFamily: '"JetBrains Mono", monospace',
               fontSize: 12, fontWeight: 600,
               textTransform: 'uppercase', letterSpacing: '0.1em',
-              transition: 'background 0.15s, transform 0.1s',
+              transition: 'background 0.15s',
             }}
             onMouseEnter={e => {
-              if (state !== 'loading') (e.target as HTMLButtonElement).style.background = '#000';
+              if (state !== 'loading' && isReady) (e.target as HTMLButtonElement).style.background = '#000';
             }}
             onMouseLeave={e => {
-              if (state !== 'loading') (e.target as HTMLButtonElement).style.background = 'var(--ink)';
+              if (state !== 'loading' && isReady) (e.target as HTMLButtonElement).style.background = 'var(--ink)';
             }}
           >
             {state === 'loading' ? 'Generating...' : 'Generate →'}
           </button>
 
-          {text.trim() === '' && (
+          {inputMode === 'text' && text.trim() === '' && (
             <button
               onClick={() => setText(EXAMPLE)}
               style={{

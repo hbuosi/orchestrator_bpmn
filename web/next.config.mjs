@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const config = {
   experimental: {
-    serverComponentsExternalPackages: ['@anthropic-ai/sdk'],
+    serverComponentsExternalPackages: ['@anthropic-ai/sdk', 'xlsx'],
   },
 };
 
