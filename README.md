@@ -1,4 +1,4 @@
-# GSD Service Orchestrator — BPMN & Service Card Generator
+# DGE Service Orchestrator — BPMN & Service Card Generator
 
 Generates two documents from a single `service-definition.json`:
 
@@ -111,5 +111,5 @@ See [`research/`](research/README.md) for the full research compiled before impl
 - Tool comparison
 - JSON intermediate format rationale
 - UAE TDRA service card standard
-- GSD orchestrator architecture pattern
+- DGE orchestrator architecture pattern
 - BPMN modeling best practices

@@ -97,7 +97,7 @@ export function combinedViewerTemplate(card: ServiceCard, bpmnXml: string): stri
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${card.nameEn} — GSD Service Orchestrator</title>
+<title>${card.nameEn} — DGE Service Orchestrator</title>
 <link rel="stylesheet" href="https://unpkg.com/bpmn-js@18.16.0/dist/assets/diagram-js.css">
 <link rel="stylesheet" href="https://unpkg.com/bpmn-js@18.16.0/dist/assets/bpmn-js.css">
 <link rel="stylesheet" href="https://unpkg.com/bpmn-js@18.16.0/dist/assets/bpmn-font/css/bpmn.css">
@@ -314,7 +314,7 @@ footer a:hover { text-decoration: underline; }
 <header class="masthead">
   <div class="kicker">
     <span class="dot">●</span>
-    <span>GSD SERVICE ORCHESTRATOR</span>
+    <span>DGE SERVICE ORCHESTRATOR</span>
     <span>·</span>
     <span>BPMN 2.0 + SERVICE CARD</span>
     <span>·</span>
@@ -362,7 +362,7 @@ footer a:hover { text-decoration: underline; }
 </main>
 
 <footer>
-  <span>GSD SERVICE ORCHESTRATOR · ${today} · bpmn-moddle → bpmn-auto-layout → BPMN-in-Color → bpmn-js</span>
+  <span>DGE SERVICE ORCHESTRATOR · ${today} · bpmn-moddle → bpmn-auto-layout → BPMN-in-Color → bpmn-js</span>
   <span>Compatible: bpmn.io · Camunda · Cawemo · Signavio · Trisotech</span>
 </footer>
 

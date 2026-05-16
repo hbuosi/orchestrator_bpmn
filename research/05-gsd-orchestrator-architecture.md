@@ -1,6 +1,6 @@
-# GSD Orchestrator Architecture
+# DGE Orchestrator Architecture
 
-## GSD-2 (Get Stuff Done) — Reference Architecture
+## DGE-2 (Get Stuff Done) — Reference Architecture
 
 **Repo:** https://github.com/gsd-build/gsd-2  
 **Type:** Meta-prompting + context engineering + spec-driven development
@@ -51,7 +51,7 @@
 
 ## How We Apply This Pattern
 
-Our orchestrator adapts the GSD pattern for document generation:
+Our orchestrator adapts the DGE pattern for document generation:
 
 ```
 service-definition.json
@@ -75,9 +75,9 @@ Each generator runs in isolation with only the data it needs.
 
 ---
 
-## GSD-1 vs GSD-2
+## DGE-1 vs DGE-2
 
-| Feature | GSD-1 | GSD-2 |
+| Feature | DGE-1 | DGE-2 |
 |---------|-------|-------|
 | State storage | Markdown files | SQLite + Markdown projections |
 | Agent isolation | Manual | Automatic per dispatch |

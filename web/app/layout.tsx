@@ -5,7 +5,7 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'GSD Service Orchestrator',
+  title: 'DGE Service Orchestrator',
   description: 'Generate BPMN 2.0 process diagrams and UAE service cards from natural language',
 };
 

@@ -1,4 +1,4 @@
-# GSD Service Orchestrator — CLAUDE.md
+# DGE Service Orchestrator — CLAUDE.md
 
 ## Purpose
 

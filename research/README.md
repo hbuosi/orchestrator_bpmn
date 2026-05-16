@@ -1,4 +1,4 @@
-# Research — GSD Service Orchestrator
+# Research — DGE Service Orchestrator
 
 Compiled: 2026-05-12 | Sources: 22 | Confidence: High
 
@@ -10,7 +10,7 @@ Compiled: 2026-05-12 | Sources: 22 | Confidence: High
 | [02-bpmn-tools-comparison.md](02-bpmn-tools-comparison.md) | Tool landscape: bpmn.io vs others | **bpmn.io stack selected** |
 | [03-json-intermediate-format.md](03-json-intermediate-format.md) | LLM → JSON → XML pipeline | **Never generate XML directly** |
 | [04-service-card-standard.md](04-service-card-standard.md) | UAE TDRA + Abu Dhabi TAMM fields | 15 mandatory fields defined |
-| [05-gsd-orchestrator-architecture.md](05-gsd-orchestrator-architecture.md) | GSD-2 pattern + document platforms | Agent isolation + SQLite state |
+| [05-dge-orchestrator-architecture.md](05-dge-orchestrator-architecture.md) | DGE-2 pattern + document platforms | Agent isolation + SQLite state |
 | [06-bpmn-best-practices.md](06-bpmn-best-practices.md) | Layout, naming, anti-patterns | Left-to-right, happy path spine |
 
 ## TL;DR — Key Findings
@@ -23,4 +23,4 @@ Compiled: 2026-05-12 | Sources: 22 | Confidence: High
 
 4. **UAE TDRA mandates 15 fields** for government service cards. Abu Dhabi TAMM adds life events, journey steps (max 7), and dependency graphs.
 
-5. **GSD-2 architecture pattern** (fresh context per agent dispatch + SQLite state) prevents context degradation in long generation pipelines.
+5. **DGE-2 architecture pattern** (fresh context per agent dispatch + SQLite state) prevents context degradation in long generation pipelines.

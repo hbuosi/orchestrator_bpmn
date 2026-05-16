@@ -5,7 +5,7 @@ import { generateBpmnXml } from '@/lib/generators/bpmn-xml.generator';
 import { applyColors } from '@/lib/generators/bpmn-colors';
 import { combinedViewerTemplate } from '@/lib/templates/combined-viewer.html';
 import { parseExcelBuffer, parsedFileToText } from '@/lib/parsers/excel.parser';
-import type { BpmnElement, BpmnBranch } from '@/lib/schemas/bpmn-elements.schema';
+import { validateBpmnElements } from '@/lib/validators/bpmn-structure.validator';
 
 export const maxDuration = 60;
 
@@ -47,9 +47,11 @@ RULE 3 — No empty branch paths:
   ❌ FORBIDDEN: {"condition":"No","path":[]}
   ✅ REQUIRED: {"condition":"No","path":[{task},{endEvent}]}
 
-RULE 4 — Maximum 2 gateway nesting levels:
-  A gateway inside a gateway branch is OK (level 2).
-  A gateway inside a branch inside a branch inside a branch is FORBIDDEN.
+RULE 4 — Maximum 3 gateway nesting levels:
+  Level 1 (depth 0): top-level gateway — OK
+  Level 2 (depth 1): gateway inside a branch — OK
+  Level 3 (depth 2): gateway inside a branch of a branch — OK
+  Level 4 (depth 3+): FORBIDDEN — flatten by converting nested gateways into sequential gateways at a higher level.
 
 RULE 5 — Every element has a unique ID:
   IDs must never be reused. Use: start, task_1, task_2, gw_1, gw_2, end_ok, end_err1, end_err2, end_cancel1.
@@ -138,90 +140,67 @@ Output ONLY raw JSON (no markdown, no code blocks) exactly matching this structu
   "generate": {"serviceCard":true,"bpmn":true,"pdf":true,"svg":true,"standaloneHtml":true}
 }`;
 
-// ─── BPMN structural validator ────────────────────────────────────────────────
-// Catches issues that Zod allows but the layout engine cannot handle:
-// - Branches without endEvent (except the one happy-path continuation)
-// - Empty branch paths
-// - Nesting deeper than 2 levels
+const MAX_RETRIES = 5;
 
-function validateBpmnElements(elements: BpmnElement[], depth = 0, gwPath = 'root'): string[] {
-  const errors: string[] = [];
-
-  for (const el of elements) {
-    if (!('branches' in el)) continue;
-
-    const gw = el as Extract<BpmnElement, { branches: BpmnBranch[] }>;
-
-    for (const branch of gw.branches) {
-      if (!branch.path || branch.path.length === 0) {
-        errors.push(
-          `Gateway "${gw.id}" (${gwPath}) branch "${branch.condition}" is EMPTY. ` +
-          `Add at least one task + endEvent.`
-        );
-        continue;
-      }
-
-      const last = branch.path[branch.path.length - 1]!;
-      if (last.type !== 'endEvent') {
-        // Recurse to count open inner branches
-        const innerErrors = validateBpmnElements(branch.path, depth + 1, `${gwPath}→${gw.id}→${branch.condition}`);
-        errors.push(...innerErrors);
-      } else {
-        errors.push(...validateBpmnElements(branch.path, depth + 1, `${gwPath}→${gw.id}→${branch.condition}`));
-      }
-    }
-
-    // Count open (non-terminal) branches
-    const openBranches = gw.branches.filter(b => {
-      if (!b.path || b.path.length === 0) return true;
-      const last = b.path[b.path.length - 1]!;
-      return last.type !== 'endEvent';
-    });
-
-    if (openBranches.length > 1) {
-      errors.push(
-        `Gateway "${gw.id}" (${gwPath}) has ${openBranches.length} branches without endEvent: ` +
-        `[${openBranches.map(b => `"${b.condition}"`).join(', ')}]. ` +
-        `ONLY 1 open branch allowed (happy-path). ` +
-        `Add endEvent to all other branches immediately.`
-      );
-    }
-
-    if (depth >= 2) {
-      errors.push(
-        `Gateway "${gw.id}" is nested at depth ${depth}. Maximum allowed is 2. Flatten the structure.`
-      );
-    }
-  }
-
-  return errors;
+function isJsonTruncationError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes('position') || msg.includes('Unexpected end') || msg.includes('Unexpected token') || msg.includes("Expected ',' or");
 }
-
-const MAX_RETRIES = 3;
 
 async function generateDefinitionWithRetry(text: string): Promise<ReturnType<typeof ServiceDefinitionSchema.parse>> {
   let lastError = '';
   let lastOutput = '';
+  let lastWasTruncated = false;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const userContent = attempt === 1
-      ? `Generate a complete service definition for the following process:\n\n${text}\n\nBefore outputting, verify: (1) every error/rejection branch ends with endEvent, (2) each gateway has at most 1 open (non-terminating) branch, (3) no branch path is empty.`
-      : `Your previous output failed validation. Fix ALL errors below and return corrected complete JSON.\n\n` +
+    let userContent: string;
+
+    if (attempt === 1) {
+      userContent =
+        `Generate a complete service definition for the following process:\n\n${text}\n\n` +
+        `Before outputting verify: (1) every error/rejection branch ends with endEvent, ` +
+        `(2) each gateway has at most 1 open branch, (3) no branch path is empty.`;
+    } else if (lastWasTruncated) {
+      // JSON was cut off — regenerate fresh, ask for a more compact output
+      userContent =
+        `Your previous output was INCOMPLETE (JSON cut off mid-string). ` +
+        `Regenerate the COMPLETE service definition from scratch for:\n\n${text}\n\n` +
+        `COMPACTNESS RULES to stay within token limits:\n` +
+        `- journeySteps: MAXIMUM 5 steps (merge aggressively)\n` +
+        `- requiredDocuments: maximum 4 items\n` +
+        `- eligibilityCriteria: maximum 3 items\n` +
+        `- integrationApis: maximum 3 items\n` +
+        `- outputDocuments: maximum 2 items\n` +
+        `- BPMN elements: keep it to at most 12 total elements across all branches\n` +
+        `- Task labels: 2-3 words only\n` +
+        `Output ONLY raw JSON — no explanation, no markdown fences.`;
+    } else {
+      // Structural or Zod error — provide specific fix guidance
+      userContent =
+        `Your previous output failed validation. Fix ALL errors and return the COMPLETE corrected JSON.\n\n` +
         `ERRORS:\n${lastError}\n\n` +
-        `PREVIOUS OUTPUT:\n${lastOutput}\n\n` +
-        `CHECKLIST before output:\n` +
-        `- journeySteps: max 7 items\n` +
-        `- Every error/rejection/incomplete branch ends with endEvent\n` +
-        `- Each gateway has at most 1 open branch (happy-path only)\n` +
-        `- No empty branch paths\n` +
-        `- Branch conditions: 1-2 words maximum`;
+        `PREVIOUS OUTPUT (return corrected in full):\n${lastOutput}\n\n` +
+        `MANDATORY FIXES:\n` +
+        `1. journeySteps: max 7 items\n` +
+        `2. Every error/rejection branch MUST end with endEvent\n` +
+        `3. Each gateway: at most 1 open (non-endEvent) branch\n` +
+        `4. No empty branch paths\n` +
+        `5. Branch conditions: 1–2 words ("Yes" "No" "Valid" "Approved")\n` +
+        `6. Nesting > 3 levels: FLATTEN — terminate the deep branch with endEvent, ` +
+        `move the continuation logic to a sequential gateway at a higher level.\n` +
+        `FLATTEN EXAMPLE:\n` +
+        `BAD:  gw_1→Yes→gw_2→Approved→gw_3→OK→gw_4 (depth 4)\n` +
+        `GOOD: gw_1→Yes→gw_2→Approved→gw_3→OK→[task+end_ok] | gw_3→Fail→[task+end_fail]`;
+    }
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 8096,
+      max_tokens: 16000,
       system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: userContent }],
     });
+
+    lastWasTruncated = response.stop_reason === 'max_tokens';
 
     lastOutput = response.content
       .filter(b => b.type === 'text')
@@ -252,7 +231,8 @@ async function generateDefinitionWithRetry(text: string): Promise<ReturnType<typ
     } catch (err) {
       if (err instanceof Error && err.message.startsWith('BPMN structural')) throw err;
       lastError = err instanceof Error ? err.message : String(err);
-      console.error(`[generate] attempt ${attempt}/${MAX_RETRIES} failed: ${lastError.slice(0, 200)}`);
+      lastWasTruncated = lastWasTruncated || isJsonTruncationError(err);
+      console.error(`[generate] attempt ${attempt}/${MAX_RETRIES} failed (truncated=${lastWasTruncated}): ${lastError.slice(0, 200)}`);
       if (attempt === MAX_RETRIES) {
         throw new Error(`Generation failed after ${MAX_RETRIES} attempts. Last error: ${lastError}`);
       }

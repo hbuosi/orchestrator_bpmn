@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react';
 
-type State = 'idle' | 'loading' | 'complete' | 'error';
+type State = 'idle' | 'loading' | 'error';
 type InputMode = 'text' | 'file';
 
 const STEPS = [
@@ -20,14 +20,14 @@ export default function Home() {
   const [state, setState] = useState<State>('idle');
   const [step, setStep] = useState(0);
   const [stepMsg, setStepMsg] = useState('');
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [lastSuccess, setLastSuccess] = useState(false);
+  const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [text, setText] = useState('');
   const [inputMode, setInputMode] = useState<InputMode>('text');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const isReady = inputMode === 'text' ? text.trim() !== '' : uploadedFile !== null;
 
@@ -79,8 +79,9 @@ export default function Home() {
           } else if (event.type === 'complete' && event.html) {
             const blob = new Blob([event.html], { type: 'text/html' });
             const url = URL.createObjectURL(blob);
-            setBlobUrl(url);
-            setState('complete');
+            setResultUrl(url);
+            setState('idle');
+            setLastSuccess(true);
           } else if (event.type === 'error') {
             throw new Error(event.message ?? 'Unknown error');
           }
@@ -90,12 +91,6 @@ export default function Home() {
       setError(err instanceof Error ? err.message : String(err));
       setState('error');
     }
-  }
-
-  function reset() {
-    if (blobUrl) URL.revokeObjectURL(blobUrl);
-    setBlobUrl(null);
-    setState('idle');
   }
 
   function handleFileSelect(file: File) {
@@ -124,42 +119,6 @@ export default function Home() {
 
   const onDragLeave = useCallback(() => setIsDragging(false), []);
 
-  if (state === 'complete' && blobUrl) {
-    return (
-      <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column' }}>
-        <div style={{
-          background: 'var(--ink)', color: 'var(--paper)',
-          padding: '10px 20px',
-          display: 'flex', alignItems: 'center', gap: 16,
-          fontFamily: '"JetBrains Mono", monospace', fontSize: 11,
-          letterSpacing: '0.08em', textTransform: 'uppercase',
-          zIndex: 100, flexShrink: 0,
-        }}>
-          <button
-            onClick={reset}
-            style={{
-              background: 'transparent', border: '1px solid rgba(255,255,255,0.3)',
-              color: 'var(--paper)', cursor: 'pointer', padding: '5px 12px',
-              fontFamily: 'inherit', fontSize: 'inherit', letterSpacing: 'inherit',
-            }}
-          >
-            ← New
-          </button>
-          <span style={{ color: 'rgba(255,255,255,0.5)' }}>·</span>
-          <span style={{ color: 'rgba(255,255,255,0.7)' }}>GSD Service Orchestrator</span>
-          <span style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.4)' }}>
-            Use ↓ PDF A3 inside the viewer to export
-          </span>
-        </div>
-        <iframe
-          ref={iframeRef}
-          src={blobUrl}
-          style={{ flex: 1, border: 'none', width: '100%' }}
-          title="Generated Service Card + BPMN"
-        />
-      </div>
-    );
-  }
 
   return (
     <div style={{
@@ -179,7 +138,7 @@ export default function Home() {
           display: 'flex', gap: 16, justifyContent: 'center', alignItems: 'baseline',
         }}>
           <span style={{ color: 'var(--accent)' }}>●</span>
-          <span>GSD Service Orchestrator</span>
+          <span>DGE Service Orchestrator</span>
           <span>·</span>
           <span>BPMN 2.0 + Service Card</span>
         </div>
@@ -432,6 +391,60 @@ export default function Home() {
                 </span>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Success */}
+        {lastSuccess && state === 'idle' && (
+          <div style={{
+            marginTop: 24,
+            padding: '20px 24px',
+            background: '#F1F8F1',
+            borderLeft: '3px solid var(--accent)',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+          }}>
+            <div>
+              <div style={{
+                fontFamily: '"JetBrains Mono", monospace', fontSize: 10,
+                textTransform: 'uppercase', letterSpacing: '0.12em',
+                color: 'var(--accent)', marginBottom: 4,
+              }}>
+                ✓ Done
+              </div>
+              <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', marginBottom: resultUrl ? 10 : 0 }}>
+                Service Card + BPMN generated successfully.
+              </p>
+              {resultUrl && (
+                <a
+                  href={resultUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setTimeout(() => { URL.revokeObjectURL(resultUrl); setResultUrl(null); }, 60000)}
+                  style={{
+                    display: 'inline-block',
+                    padding: '8px 18px',
+                    background: 'var(--ink)',
+                    color: 'var(--paper)',
+                    textDecoration: 'none',
+                    fontFamily: '"JetBrains Mono", monospace',
+                    fontSize: 11, fontWeight: 600,
+                    textTransform: 'uppercase', letterSpacing: '0.1em',
+                  }}
+                >
+                  Open Result in New Tab →
+                </a>
+              )}
+            </div>
+            <button
+              onClick={() => { setLastSuccess(false); if (resultUrl) { URL.revokeObjectURL(resultUrl); setResultUrl(null); } }}
+              style={{
+                background: 'transparent', border: 'none',
+                cursor: 'pointer', fontSize: 18, color: 'var(--muted)',
+                flexShrink: 0, lineHeight: 1,
+              }}
+            >
+              ×
+            </button>
           </div>
         )}
 

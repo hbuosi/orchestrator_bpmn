@@ -1,7 +1,7 @@
 {
   "name": "orchestrator-bpmn",
   "version": "0.1.0",
-  "description": "GSD Service Orchestrator — generates BPMN 2.0 diagrams and Service Cards (UAE TDRA/TAMM standard)",
+  "description": "DGE Service Orchestrator — generates BPMN 2.0 diagrams and Service Cards (UAE TDRA/TAMM standard)",
   "type": "module",
   "scripts": {
     "generate": "bun run src/orchestrator.ts",
