@@ -11,6 +11,9 @@ export const maxDuration = 60;
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+const MODEL_FAST = 'claude-haiku-4-5-20251001'; // primary — fast + cheap
+const MODEL_SMART = 'claude-sonnet-4-6';          // fallback — thorough
+
 const SYSTEM_PROMPT = `You are a BPMN 2.0 process modeling expert and government digital service designer specializing in UAE/Abu Dhabi TAMM standards.
 
 Generate a complete service definition JSON including both a serviceCard and bpmnProcess.
@@ -140,42 +143,52 @@ Output ONLY raw JSON (no markdown, no code blocks) exactly matching this structu
   "generate": {"serviceCard":true,"bpmn":true,"pdf":true,"svg":true,"standaloneHtml":true}
 }`;
 
-const MAX_RETRIES = 5;
+// Attempts 1–2: Haiku (fast). Attempts 3–4: Sonnet (thorough fallback).
+const MAX_RETRIES = 4;
+
+const COMPACT_HINTS =
+  `COMPACTNESS (stay within token budget):\n` +
+  `- journeySteps: max 5 steps\n` +
+  `- requiredDocuments: max 4 items\n` +
+  `- eligibilityCriteria: max 3 items\n` +
+  `- integrationApis: max 3 items\n` +
+  `- outputDocuments: max 2 items\n` +
+  `- BPMN: max 12 elements total across all branches\n` +
+  `- Task labels: 2–3 words only`;
 
 function isJsonTruncationError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return msg.includes('position') || msg.includes('Unexpected end') || msg.includes('Unexpected token') || msg.includes("Expected ',' or");
 }
 
-async function generateDefinitionWithRetry(text: string): Promise<ReturnType<typeof ServiceDefinitionSchema.parse>> {
+async function generateDefinitionWithRetry(
+  text: string,
+  onStatus: (msg: string) => void,
+): Promise<ReturnType<typeof ServiceDefinitionSchema.parse>> {
   let lastError = '';
   let lastOutput = '';
   let lastWasTruncated = false;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const useHaiku = attempt <= 2;
+    const model: string = useHaiku ? MODEL_FAST : MODEL_SMART;
+    const maxTokens: number = useHaiku ? 6000 : (lastWasTruncated ? 16000 : 8000);
+
     let userContent: string;
 
     if (attempt === 1) {
       userContent =
-        `Generate a complete service definition for the following process:\n\n${text}\n\n` +
+        `Generate a complete service definition for:\n\n${text}\n\n` +
+        `${COMPACT_HINTS}\n\n` +
         `Before outputting verify: (1) every error/rejection branch ends with endEvent, ` +
         `(2) each gateway has at most 1 open branch, (3) no branch path is empty.`;
     } else if (lastWasTruncated) {
-      // JSON was cut off — regenerate fresh, ask for a more compact output
       userContent =
         `Your previous output was INCOMPLETE (JSON cut off mid-string). ` +
         `Regenerate the COMPLETE service definition from scratch for:\n\n${text}\n\n` +
-        `COMPACTNESS RULES to stay within token limits:\n` +
-        `- journeySteps: MAXIMUM 5 steps (merge aggressively)\n` +
-        `- requiredDocuments: maximum 4 items\n` +
-        `- eligibilityCriteria: maximum 3 items\n` +
-        `- integrationApis: maximum 3 items\n` +
-        `- outputDocuments: maximum 2 items\n` +
-        `- BPMN elements: keep it to at most 12 total elements across all branches\n` +
-        `- Task labels: 2-3 words only\n` +
+        `${COMPACT_HINTS}\n` +
         `Output ONLY raw JSON — no explanation, no markdown fences.`;
     } else {
-      // Structural or Zod error — provide specific fix guidance
       userContent =
         `Your previous output failed validation. Fix ALL errors and return the COMPLETE corrected JSON.\n\n` +
         `ERRORS:\n${lastError}\n\n` +
@@ -193,18 +206,39 @@ async function generateDefinitionWithRetry(text: string): Promise<ReturnType<typ
         `GOOD: gw_1→Yes→gw_2→Approved→gw_3→OK→[task+end_ok] | gw_3→Fail→[task+end_fail]`;
     }
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 16000,
-      system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-      messages: [{ role: 'user', content: userContent }],
-    });
+    if (attempt === 1) {
+      onStatus('Calling AI model (fast mode)...');
+    } else if (useHaiku) {
+      onStatus(`Retrying — attempt ${attempt} of ${MAX_RETRIES}...`);
+    } else {
+      onStatus(`Switching to advanced model — attempt ${attempt} of ${MAX_RETRIES}...`);
+    }
+
+    // Stream from Claude so we can emit SSE heartbeats while it generates
+    let tick = 0;
+    const heartbeat = setInterval(() => {
+      tick++;
+      const dots = '.'.repeat((tick % 3) + 1);
+      onStatus(`Generating service definition${dots}`);
+    }, 4000);
+
+    let response: Anthropic.Message;
+    try {
+      response = await anthropic.messages.stream({
+        model,
+        max_tokens: maxTokens,
+        system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+        messages: [{ role: 'user', content: userContent }],
+      }).finalMessage();
+    } finally {
+      clearInterval(heartbeat);
+    }
 
     lastWasTruncated = response.stop_reason === 'max_tokens';
 
     lastOutput = response.content
-      .filter(b => b.type === 'text')
-      .map(b => (b as { type: 'text'; text: string }).text)
+      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .map(b => b.text)
       .join('');
 
     const jsonStr = lastOutput
@@ -216,11 +250,10 @@ async function generateDefinitionWithRetry(text: string): Promise<ReturnType<typ
       const parsed = JSON.parse(jsonStr);
       const validated = ServiceDefinitionSchema.parse(parsed);
 
-      // Structural BPMN validation (Zod doesn't catch these)
       const structuralErrors = validateBpmnElements(validated.bpmnProcess.elements);
       if (structuralErrors.length > 0) {
         lastError = `BPMN structural errors:\n${structuralErrors.map((e, i) => `${i + 1}. ${e}`).join('\n')}`;
-        console.error(`[generate] attempt ${attempt}/${MAX_RETRIES} — structural: ${structuralErrors[0]}`);
+        console.error(`[generate] attempt ${attempt}/${MAX_RETRIES} model=${model} — structural: ${structuralErrors[0]}`);
         if (attempt === MAX_RETRIES) {
           throw new Error(`BPMN structural validation failed after ${MAX_RETRIES} attempts.\n${lastError}`);
         }
@@ -232,7 +265,7 @@ async function generateDefinitionWithRetry(text: string): Promise<ReturnType<typ
       if (err instanceof Error && err.message.startsWith('BPMN structural')) throw err;
       lastError = err instanceof Error ? err.message : String(err);
       lastWasTruncated = lastWasTruncated || isJsonTruncationError(err);
-      console.error(`[generate] attempt ${attempt}/${MAX_RETRIES} failed (truncated=${lastWasTruncated}): ${lastError.slice(0, 200)}`);
+      console.error(`[generate] attempt ${attempt}/${MAX_RETRIES} model=${model} failed (truncated=${lastWasTruncated}): ${lastError.slice(0, 200)}`);
       if (attempt === MAX_RETRIES) {
         throw new Error(`Generation failed after ${MAX_RETRIES} attempts. Last error: ${lastError}`);
       }
@@ -277,7 +310,9 @@ export async function POST(req: NextRequest) {
             : 'Analyzing your process description...',
         });
 
-        const definition = await generateDefinitionWithRetry(text);
+        const definition = await generateDefinitionWithRetry(text, (msg) =>
+          send(controller, encoder, { type: 'progress', step: 1, message: msg }),
+        );
 
         send(controller, encoder, { type: 'progress', step: 2, message: 'Validating service definition...' });
         send(controller, encoder, { type: 'progress', step: 3, message: 'Generating BPMN diagram...' });
