@@ -18,8 +18,8 @@ export const maxDuration = 60;
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const MODEL_FAST = 'claude-haiku-4-5-20251001';
-const MODEL_SMART = 'claude-sonnet-4-6';
+const MODEL_PRIMARY = 'claude-opus-4-7';   // primary — most capable
+const MODEL_FALLBACK = 'claude-sonnet-4-6'; // fallback — faster if Opus fails
 const MAX_RETRIES = 4;
 
 // ─── Existing Service Card + BPMN system prompt ────────────────────────────────
@@ -214,9 +214,9 @@ async function generateDefinitionWithRetry(
   let lastWasTruncated = false;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const useHaiku = attempt <= 2;
-    const model: string = useHaiku ? MODEL_FAST : MODEL_SMART;
-    const maxTokens: number = useHaiku ? 6000 : (lastWasTruncated ? 16000 : 8000);
+    const useOpus = attempt <= 2;
+    const model: string = useOpus ? MODEL_PRIMARY : MODEL_FALLBACK;
+    const maxTokens: number = useOpus ? 6000 : (lastWasTruncated ? 16000 : 8000);
 
     let userContent: string;
     if (attempt === 1) {
@@ -245,9 +245,9 @@ async function generateDefinitionWithRetry(
         `6. Nesting > 3 levels: FLATTEN`;
     }
 
-    if (attempt === 1) onStatus('Calling AI model (fast mode)...');
-    else if (useHaiku) onStatus(`Retrying — attempt ${attempt} of ${MAX_RETRIES}...`);
-    else onStatus(`Switching to advanced model — attempt ${attempt} of ${MAX_RETRIES}...`);
+    if (attempt === 1) onStatus('Calling Opus model...');
+    else if (useOpus) onStatus(`Retrying with Opus — attempt ${attempt} of ${MAX_RETRIES}...`);
+    else onStatus(`Switching to Sonnet fallback — attempt ${attempt} of ${MAX_RETRIES}...`);
 
     let tick = 0;
     const heartbeat = setInterval(() => {
@@ -302,9 +302,9 @@ async function generateManifestWithRetry(
   let lastWasTruncated = false;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const useHaiku = attempt <= 2;
-    const model: string = useHaiku ? MODEL_FAST : MODEL_SMART;
-    const maxTokens: number = useHaiku ? 8000 : (lastWasTruncated ? 32000 : 16000);
+    const useOpus = attempt <= 2;
+    const model: string = useOpus ? MODEL_PRIMARY : MODEL_FALLBACK;
+    const maxTokens: number = useOpus ? 8000 : (lastWasTruncated ? 32000 : 16000);
 
     let userContent: string;
     if (attempt === 1) {
@@ -331,9 +331,9 @@ async function generateManifestWithRetry(
         `Return the full corrected ServiceManifest v2.6 JSON.`;
     }
 
-    if (attempt === 1) onStatus('Generating Service Manifest (fast mode)...');
-    else if (useHaiku) onStatus(`Retrying manifest — attempt ${attempt} of ${MAX_RETRIES}...`);
-    else onStatus(`Switching to advanced model — attempt ${attempt} of ${MAX_RETRIES}...`);
+    if (attempt === 1) onStatus('Generating Service Manifest with Opus...');
+    else if (useOpus) onStatus(`Retrying manifest with Opus — attempt ${attempt} of ${MAX_RETRIES}...`);
+    else onStatus(`Switching to Sonnet fallback — attempt ${attempt} of ${MAX_RETRIES}...`);
 
     let tick = 0;
     const heartbeat = setInterval(() => {
@@ -409,9 +409,9 @@ async function generateStageWithRetry<T>(
   let lastWasTruncated = false;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const useHaiku = attempt <= 2;
-    const model: string = useHaiku ? MODEL_FAST : MODEL_SMART;
-    const maxTokens: number = useHaiku ? (stageNum === 2 ? 8000 : 6000) : (lastWasTruncated ? 16000 : 10000);
+    const useOpus = attempt <= 2;
+    const model: string = useOpus ? MODEL_PRIMARY : MODEL_FALLBACK;
+    const maxTokens: number = useOpus ? (stageNum === 2 ? 8000 : 6000) : (lastWasTruncated ? 16000 : 10000);
 
     let userContent: string;
     if (attempt === 1) {
@@ -427,9 +427,9 @@ async function generateStageWithRetry<T>(
         `Fix validation errors in ${stageName}.\n\nERRORS:\n${lastError}\n\nPREVIOUS OUTPUT:\n${lastOutput}\n\nReturn the full corrected "${outputKey}" JSON.`;
     }
 
-    if (attempt === 1) onStatus(`Generating ${stageName} (fast mode)...`);
-    else if (useHaiku) onStatus(`Retrying ${stageName} — attempt ${attempt}...`);
-    else onStatus(`Advanced model — ${stageName} attempt ${attempt}...`);
+    if (attempt === 1) onStatus(`Generating ${stageName} with Opus...`);
+    else if (useOpus) onStatus(`Retrying ${stageName} with Opus — attempt ${attempt}...`);
+    else onStatus(`Sonnet fallback — ${stageName} attempt ${attempt}...`);
 
     let tick = 0;
     const heartbeat = setInterval(() => {
