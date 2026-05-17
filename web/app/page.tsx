@@ -26,9 +26,24 @@ const STEPS_MANIFEST_STAGE = [
   'Building complete manifest...',
 ];
 
-const EXAMPLE = `Trade License Renewal — Abu Dhabi DED
+const EXAMPLE = `Cybersecurity Incident Response — CYB-IR001 (Critical Variant)
+Abu Dhabi DGE — Information Security Operations
 
-A business owner renews their trade license online via TAMM. The system verifies the license validity and outstanding fees. If fees are owed, the applicant pays online. The system then confirms the renewal, issues a digital certificate, and notifies the business via SMS and email.`;
+A reporter (employee, system alert, or external party) submits an incident report through the security portal or service desk. The System automatically acknowledges receipt within 15 minutes (Milestone 1) and starts the SLA timer — Critical incidents must be resolved within 24 hours.
+
+A Cyber Analyst performs an Initial Assessment (45 min) then classifies the incident and sends acknowledgement notification M2 (15 min). The Cyber Lead reviews: if classified Critical, the Cyber Lead declares a Critical Incident and appoints an Incident Commander (30 min); if not Critical, the case is returned to the Analyst for re-triage. Once declared Critical, the System sends an Executive Brief (M-ALERT) to senior stakeholders.
+
+The Analyst collects digital evidence (2h) then determines the root cause (2h). IT Support executes containment actions (4h) and the System sends a Containment Milestone notification M3. Risk & Compliance then evaluates whether the incident triggers a regulatory or data breach obligation. If yes, the Risk & Compliance team invokes the Breach Management procedure (2h) before recovery. If no breach, the process proceeds directly to recovery.
+
+IT Support eradicates the threat and recovers affected systems (variable duration). The Cyber Lead verifies resolution. If resolution is not confirmed, IT Support re-runs eradication and recovery — maximum 2 rework cycles before mandatory escalation. Once verified, the Analyst documents and closes the case (4h), the System sends Closure notification plus CSAT survey (M5), and archives the case record.
+
+Finally, the Cyber Lead conducts a Post-Incident Review (PIR) within 10 business days, updates the Knowledge Base, and publishes lessons-learned and control improvements (M6).
+
+Participants: Reporter · System · Cyber Analyst · Cyber Lead / IC · IT Support · Risk & Compliance
+Regulatory basis: UAE National Cybersecurity Strategy, NCA ECC-1:2018, NESA UAE IA Standards
+SLA: Critical 24h end-to-end · PIR within 10 business days
+Channels: Security portal (online) · Service desk (call-center) · Automated SIEM alert (system)
+Owning entity: Abu Dhabi DGE — Information Security Operations`;
 
 // Labels shown in Stage-by-Stage review gates
 const STAGE_LABELS = [
