@@ -1,0 +1,7 @@
+Family ID,Family Name,Service ID,Service Name,Archetype,Calls,Called By,SLA Target,Workflow CSV
+VND-FAM-001,Vendor Onboarding,VND-ONB001,Vendor Onboarding Package,Composite,"VND-DD001, VND-FIN001, VND-SEC001, VND-CON001, VND-REG001",,10d,VND-ONB001_Workflow.csv
+VND-FAM-001,Vendor Onboarding,VND-DD001,Vendor Due Diligence,Capability,,VND-ONB001,5d,VND-DD001_Workflow.csv
+VND-FAM-001,Vendor Onboarding,VND-FIN001,Financial Solvency Check,Capability,,VND-ONB001,3d,VND-FIN001_Workflow.csv
+VND-FAM-001,Vendor Onboarding,VND-SEC001,Security Clearance,Capability,,VND-ONB001,4d,VND-SEC001_Workflow.csv
+VND-FAM-001,Vendor Onboarding,VND-CON001,Contract Review & Approval,Capability,,VND-ONB001,5d,VND-CON001_Workflow.csv
+VND-FAM-001,Vendor Onboarding,VND-REG001,ERP Vendor Registration,Capability,,VND-ONB001,1d,VND-REG001_Workflow.csv

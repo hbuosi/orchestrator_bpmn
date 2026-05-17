@@ -1,0 +1,9 @@
+Capability ID,Capability Name,Domain,Function (verb),Object,Owner,SLA,Maturity,Called By Count,Last Updated,Manifest Reference
+VND-DD001,Vendor Due Diligence,Procurement,Verify,Vendor Identity,Risk Team,5d,Operating,1,2025-Q4,VND-DD001_Manifest.docx
+VND-FIN001,Financial Solvency Check,Procurement,Assess,Financial Health,Finance Team,3d,Operating,1,2025-Q4,VND-FIN001_Manifest.docx
+VND-SEC001,Security Clearance,Cybersecurity,Verify,Security Posture,CISO Office,4d,Operating,1,2025-Q4,VND-SEC001_Manifest.docx
+VND-CON001,Contract Review & Approval,Legal,Review,Contract Terms,Legal Counsel,5d,Operating,1,2025-Q4,VND-CON001_Manifest.docx
+VND-REG001,ERP Vendor Registration,Procurement,Register,Vendor Record,VMD Team,1d,Operating,1,2025-Q4,VND-REG001_Manifest.docx
+CMN-NTF001,Standard Notification,Common,Send,Notification,Comms Service,15m,Stable,N,2025-Q3,CMN-NTF001_Manifest.docx
+CMN-ARC001,Standard Archive,Common,Archive,Case Record,Records Team,1h,Stable,N,2025-Q3,CMN-ARC001_Manifest.docx
+CMN-ID001,Identity Verification,Common,Verify,Customer Identity,Identity Service,1d,Stable,N,2025-Q3,CMN-ID001_Manifest.docx
