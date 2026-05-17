@@ -1,302 +1,291 @@
-# DGE Service Orchestrator — Guia do Especialista
+# DGE Service Orchestrator — System Guide
 
-> Guia em português para entender e explicar o sistema como especialista em design de serviços públicos.
+## Overview
 
----
+The DGE Service Orchestrator transforms a government service description — plain text or spreadsheet — into complete technical documentation using AI (Claude by Anthropic).
 
-## O que é o DGE Service Orchestrator?
-
-É uma plataforma que transforma a descrição de um serviço público (em texto simples ou planilha) em documentação técnica completa — automaticamente, usando Inteligência Artificial (Claude da Anthropic).
-
-O sistema segue o **Business Service Design Framework v2.6** do Abu Dhabi DGE (Departamento de Governo e Transformação Digital), que é a metodologia oficial para desenhar, documentar e preparar serviços públicos para automação.
+The system follows the **Business Service Design Framework v2.6** by the Abu Dhabi Department of Government Enablement (DGE), the official methodology for designing, documenting, and preparing government services for automation.
 
 ---
 
-## Os três modos de geração
+## Generation Modes
 
-### Modo 1 — Service Card + BPMN
-> Modo legado, mantido para uso rápido.
+### Mode 1 — Service Card + BPMN
 
-Gera dois documentos combinados em um único visualizador:
-- **Service Card**: ficha técnica do serviço no padrão UAE TDRA (código, nome em inglês e árabe, critérios de elegibilidade, documentos exigidos, taxas, SLA, base legal etc.)
-- **Diagrama BPMN 2.0**: fluxo do processo com cores semânticas (verde = fluxo feliz, laranja = exceção, vermelho = cancelamento, roxo = tarefa humana, azul = gateway de decisão)
+Generates a combined single-page viewer containing:
 
-**Quando usar**: demonstrações rápidas, prototipagem inicial, quando não precisa do framework completo.
+- **Service Card** — structured service metadata following UAE TDRA standards: service code, name (English and Arabic), eligibility criteria, required documents, fees, SLA, legal basis, transformation stage, UAE Pass level, output documents.
+- **BPMN 2.0 Diagram** — interactive process flow with semantic colour coding:
+  - Green — happy path / start / success end
+  - Purple — human/user tasks
+  - Teal — automated/service tasks
+  - Blue — decision gateways
+  - Orange — exception handling
+  - Red — cancellation / rejection ends
 
----
-
-### Modo 2 — Full Manifest — Single Pass
-### Modo 3 — Full Manifest — Stage by Stage
-
-Ambos geram o **Service Manifest completo** seguindo o Business Service Design Framework v2.6.  
-A diferença está em *como* a IA gera e *como* o usuário interage com o resultado.
+**Use when:** rapid prototyping, stakeholder demos, or when the full framework is not required.
 
 ---
 
-## O que é o Service Manifest v2.6?
+### Mode 2 — Full Manifest — Single Pass
 
-O Service Manifest é o **documento-mestre de um serviço público**. Ele substitui 4 a 7 documentos separados que antes existiam no framework v2.5 por um único artefato com **27 seções numeradas**, divididas em 4 estágios.
+Generates the complete Service Manifest (§1–27) in a single AI call. Produces 5 separate PDF-ready documents simultaneously.
 
-Cada estágio tem um objetivo claro e um gate de revisão antes de avançar para o próximo.
+**Use when:** producing a first complete draft quickly, running demos, or when the service is already well-described.
+
+---
+
+### Mode 3 — Full Manifest — Stage by Stage
+
+Generates one stage at a time with a review gate between each stage. Each stage uses the previous stages as context. After Stage 3, the complete §1–27 unified manifest is generated automatically.
+
+**Use when:** running a formal design process with approval gates, presenting to a client at each stage gate, or when quality control per stage is required.
+
+---
+
+## The Service Manifest v2.6
+
+The Service Manifest is the **single source of truth** for a government service. It consolidates what was previously 4–7 separate documents into one structured artefact with **27 numbered sections** across 4 stages.
 
 ```
-Stage 0 → Stage 1 → Stage 2 → Stage 3
-  §1–7     §8–13    §14–22    §23–27
-Definir   Desenhar  Modelar   Construir
+Stage 0 ──► Stage 1 ──► Stage 2 ──► Stage 3
+  §1–7        §8–13      §14–22      §23–27
+  Define      Design      Model       Build
 ```
 
----
-
-## Os 4 Estágios em detalhe
-
-### Stage 0 — Service Definition (§1–7)
-**Cor**: Verde (`#2E7D32`)  
-**Objetivo**: Definir o quê o serviço é antes de qualquer decisão de design.
-
-| Seção | Conteúdo |
-|-------|----------|
-| §1 | **Service Identification** — Código do serviço (ex: `DGE-BL-001`), nome em inglês e árabe, categoria, entidade responsável, gatilho de entrada, resultado esperado, escopo (o que está dentro e fora) |
-| §2 | **Customer Journey Context** — Em qual fase da jornada do cidadão esse serviço se encaixa, serviço anterior e posterior, pontos de contato (touchpoints), pontos de dor (pain points) |
-| §3 | **Capability Reuse Search** — Pesquisa se já existe uma capacidade parecida no portfólio do governo (para evitar duplicar serviços). Decisão: consumir existente, fazer fork ou criar novo |
-| §4 | **Demand & Capacity Profile** — Volume anual estimado, períodos de pico, canais de entrega (online, app, presencial, call center), capacidade atual |
-| §6 | **Data Inventory** — Inventário de dados: quais elementos de dado o serviço cria, lê, atualiza ou exclui (CRUD), classificação de sensibilidade e tempo de retenção |
-| §7 | **Stakeholder & Persona Map** — Mapa de papéis: quem aprova, quem revisa, quem é informado, quem opera o serviço e em qual organização |
-
-**Gate de revisão Stage 0**: "O serviço está bem definido? Temos clareza de escopo, demanda e partes interessadas?"
+Each stage has a review gate before proceeding to the next.
 
 ---
 
-### Stage 1 — Service Design (§8–13)
-**Cor**: Azul (`#1565C0`)  
-**Objetivo**: Decidir a arquitetura do serviço e definir as metas de desempenho.
+## Stage 0 — Service Definition (§1–7)
 
-| Seção | Conteúdo |
-|-------|----------|
-| §8 | **Decomposition Decision** — Qual é o arquétipo do serviço? **Capability** (faz uma coisa do início ao fim), **Composite** (agrupa múltiplas capacidades em sequência) ou **Orchestrating** (chama outros serviços, nunca executa trabalho direto). Inclui smell tests (testes de fronteira) e log de decisões |
-| §9 | **Service Boundary & Interfaces** — Entradas (inputs), saídas (outputs) e serviços que são chamados (com padrão de cascata: sequencial, paralelo ou pré-existente) |
-| §10 | **Value Stream & Customer Journey** — Fases da cadeia de valor do ponto de vista do cliente e do serviço (3 a 7 fases) |
-| §11 | **Experience & Outcome Targets** — SLA declarado vs. SLA calculado (com aritmética de cascata de OLAs), variância e justificativa se houver desvio |
-| §12 | **Audit & Regulatory Drivers** — Quais etapas do processo exigem evidência para auditoria, qual regulação ou política se aplica e por quanto tempo reter |
-| §13 | **Service Lifecycle Stage** — Em qual fase do ciclo de vida o serviço está agora: Designing, Implementing, Operating ou Retiring |
+**Colour:** Green `#2E7D32` · **Gate question:** *Is the service clearly defined? Is scope, demand, and stakeholder ownership confirmed?*
 
-**Gate de revisão Stage 1**: "A arquitetura está correta? Os SLAs são atingíveis? As fronteiras do serviço estão claras?"
+| Section | Content |
+|---------|---------|
+| §1 Service Identification | Service code (e.g. `DGE-BL-001`), name in English and Arabic, category, owning entity, trigger, expected outcome, in-scope and out-of-scope boundary |
+| §2 Customer Journey Context | Journey phase, preceding and following service, touchpoints, pain points |
+| §3 Capability Reuse Search | Search for existing government capabilities to avoid duplication. Decision per entry: `consume`, `fork`, or `new` |
+| §4 Demand & Capacity Profile | Estimated annual volume, peak periods, delivery channels (online / app / call-center / in-person), current capacity baseline |
+| §6 Data Inventory | CRUD matrix per data element: what the service creates, reads, updates, and deletes; sensitivity classification; retention period |
+| §7 Stakeholder & Persona Map | Role, type (approver / reviewer / operator / escalation / informed), responsibilities, organisation |
 
 ---
 
-### Stage 2 — Task Model & Workflow (§14–22)
-**Cor**: Laranja (`#E65100`)  
-**Objetivo**: Decompor o serviço em módulos e tarefas, e gerar o fluxo BPMN.
+## Stage 1 — Service Design (§8–13)
 
-| Seção | Conteúdo |
-|-------|----------|
-| §14 | **Module Register** — Lista de módulos (ex: `MOD-01`, `MOD-02`): cada módulo é um grupo lógico de tarefas com seu próprio OLA e nível de maturidade do subfluxo |
-| §15 | **Task Register** — Lista detalhada de tarefas (ex: `T01`, `T02`): tipo, modo de digitalização (automated / assisted / manual), OLA, pressupostos de capacidade, caminho de exceção e se é candidata à automação |
-| §16 | **Loop Governance** — Regras para processos iterativos (retrabalho, reenvio, negociação): quantas vezes pode repetir, qual o timeout, como escalar |
-| §20 | **Workflow Diagram (BPMN 2.0)** — Diagrama interativo com: viewer embutido, botão para baixar PDF do BPMN, SVG e XML. Cores semânticas: verde = fluxo feliz, roxo = tarefa humana, azul = gateway, laranja = exceção |
-| §21 | **Subflow Alignment Summary** — Mapeamento de cada módulo para um padrão WCP (Workflow Control Pattern), ex: `WCP-01` Sequence, `WCP-04` Exclusive Choice, com registro de desvios |
+**Colour:** Blue `#1565C0` · **Gate question:** *Is the architecture correct? Are SLAs achievable? Are service boundaries clear?*
 
-**Gate de revisão Stage 2**: "O modelo de tarefas está completo? O diagrama BPMN representa fielmente o processo?"
-
----
-
-### Stage 3 — Build-Ready Requirements (§23–27)
-**Cor**: Roxo (`#6A1B9A`)  
-**Objetivo**: Entregar especificações prontas para a equipe de desenvolvimento construir.
-
-| Seção | Conteúdo |
-|-------|----------|
-| §23 | **Build-Ready Handoff** — Três sub-seções: (1) **Data Contracts**: contratos de dados com campos obrigatórios/opcionais, estratégia de versionamento; (2) **Integration Points**: sistemas externos, protocolo, frequência, autenticação, comportamento de fallback; (3) **Automation Candidates**: quais tarefas serão automatizadas em qual fase (Phase 1 ou Phase 2) |
-| §24 | **KPI Inheritance** — Indicadores-chave de performance com definição, tarefas-fonte, KPI pai/filho, frequência de medição, baseline atual e meta |
-| §25 | **Operating Model** — (1) **RACI Matrix**: para cada atividade, quem é Responsável, Accountable, Consultado e Informado; (2) **Governance Cadence**: cadência de reuniões (forum, frequência, participantes, propósito) |
-| §26 | **Acceptance Criteria & Test Approach** — Critérios de aceite com abordagem de teste, threshold de aprovação e dono do teste |
-| §27 | **Risks & Open Questions** — Registro de riscos, issues, decisões pendentes e perguntas em aberto com dono e data de resolução |
-
-**Gate de revisão Stage 3**: "O time de desenvolvimento tem tudo que precisa para construir? Os riscos estão mapeados? Os critérios de aceite estão claros?"
+| Section | Content |
+|---------|---------|
+| §8 Decomposition Decision | Service archetype: **Capability** (atomic, end-to-end), **Composite** (bundles multiple capabilities sequentially), or **Orchestrating** (calls other services, never executes work directly). Includes boundary smell tests and decision log |
+| §9 Service Boundary & Interfaces | Inputs, outputs, and called services with cascade pattern (Sequential / Parallel / Pre-existing) and OLA |
+| §10 Value Stream & Customer Journey | 3–7 value stream phases from both the customer and service perspective |
+| §11 Experience & Outcome Targets | Stated SLA vs. computed SLA (OLA cascade arithmetic), variance, and justification if applicable |
+| §12 Audit & Regulatory Drivers | Control steps requiring audit evidence, applicable regulation or policy, and retention period |
+| §13 Service Lifecycle Stage | Current phase: Designing / Implementing / Operating / Retiring; annual review date |
 
 ---
 
-## Single Pass vs. Stage by Stage — Diferença técnica e estratégica
+## Stage 2 — Task Model & Workflow (§14–22)
+
+**Colour:** Orange `#E65100` · **Gate question:** *Is the task model complete? Does the BPMN diagram accurately represent the process?*
+
+| Section | Content |
+|---------|---------|
+| §14 Module Register | Logical groupings of tasks (e.g. `MOD-01`, `MOD-02`), each with an OLA and subflow maturity level (Candidate / Provisional / Ratified / Stable / Deprecated) |
+| §15 Task Register | Detailed task list (e.g. `T01`, `T02`): type code, digitization mode (automated / assisted / manual), OLA, capacity assumptions, exception path, automation candidate flag |
+| §16 Loop Governance | Rules for iterative processes (Resubmission / Rework / Negotiation): max cycles, timeout, clock policy, escalation path |
+| §20 Workflow Diagram | Interactive BPMN 2.0 viewer embedded in the document. Export buttons: PDF, SVG, BPMN XML |
+| §21 Subflow Alignment Summary | Mapping of each module to a Workflow Control Pattern (WCP) code (e.g. `WCP-01` Sequence, `WCP-04` Exclusive Choice) with deviation notes |
+
+---
+
+## Stage 3 — Build-Ready Requirements (§23–27)
+
+**Colour:** Purple `#6A1B9A` · **Gate question:** *Does the development team have everything needed to build? Are risks mapped? Are acceptance criteria clear?*
+
+| Section | Content |
+|---------|---------|
+| §23 Build-Ready Handoff | **Data Contracts** (mandatory/optional fields, versioning strategy) · **Integration Points** (external systems, protocol, frequency, authentication, fallback behaviour) · **Automation Candidates** (task ID, build approach, prerequisites, Phase 1 or Phase 2) |
+| §24 KPI Inheritance | KPI name, definition, source tasks, parent/child KPI relationship, measurement frequency, baseline, and target |
+| §25 Operating Model | **RACI Matrix** (Responsible / Accountable / Consulted / Informed per activity) · **Governance Cadence** (forum, frequency, attendees, purpose) |
+| §26 Acceptance Criteria | Criterion, test approach, pass threshold, test owner |
+| §27 Risks & Open Questions | Item, type (Risk / Issue / Decision needed / Open question), owner, resolution date, notes |
+
+---
+
+## Single Pass vs. Stage by Stage
 
 ### Full Manifest — Single Pass
 
 ```
-Entrada (texto ou planilha)
-         │
-         ▼
-   [Uma única chamada à IA]
-   Claude gera JSON completo
-   com todos os 4 estágios
-   e o diagrama BPMN de uma vez
-         │
-         ▼
-   Sistema renderiza 5 HTMLs
-   separados em paralelo
-         │
-         ▼
-5 links aparecem juntos:
-  ● Stage 0 PDF  (verde)
-  ● Stage 1 PDF  (azul)
-  ● Stage 2 PDF  (laranja)
-  ● Stage 3 PDF  (roxo)
-  ● Complete Manifest §1–27  (preto)
+Input (text or spreadsheet)
+        │
+        ▼
+  [ 1 API call — Claude Opus ]
+  Generates complete ServiceManifest JSON
+  (all 4 stages + BPMN in one response)
+        │
+        ▼
+  System validates JSON schema + BPMN structure
+  Renders 5 HTML documents in parallel
+        │
+        ▼
+  5 links delivered simultaneously:
+    ● Stage 0 — Service Definition     (green)
+    ● Stage 1 — Service Design         (blue)
+    ● Stage 2 — Task Model & Workflow  (orange)
+    ● Stage 3 — Build-Ready            (purple)
+    ● Complete Manifest §1–27          (black)
 ```
 
-**Como funciona tecnicamente:**
-- 1 chamada à API do Claude (Opus primeiro, Sonnet como fallback)
-- O modelo recebe as instruções de todos os 4 estágios ao mesmo tempo e gera um único JSON com a estrutura completa `ServiceManifest v2.6`
-- O sistema valida o JSON contra o schema Zod, verifica a integridade estrutural do BPMN, gera o XML e renderiza todos os 5 documentos
-
-**Vantagens:**
-- Mais rápido no total (uma única chamada vs. quatro)
-- Garante consistência interna (o Stage 3 já conhece os dados do Stage 0 porque estão no mesmo prompt)
-- Ideal para protótipos, demonstrações e quando o serviço já está bem descrito
-
-**Limitações:**
-- Requer um token budget maior (o JSON completo é extenso)
-- Menos controle sobre cada estágio individualmente
-- Se a geração falhar, recomeça do zero
+| | |
+|-|-|
+| **API calls** | 1 |
+| **Internal consistency** | Guaranteed — all stages share the same generation context |
+| **Speed** | Fastest total time |
+| **Control** | Low — all-or-nothing; retry restarts from scratch |
+| **Token budget** | High — full manifest JSON in one response |
 
 ---
 
 ### Full Manifest — Stage by Stage
 
 ```
-Entrada (texto ou planilha)
-         │
-         ▼
-   [Chamada 1: Stage 0]
-   Gera apenas §1–7
-         │
-   ┌─────▼──────┐
-   │  Gate 0    │ ← usuário revisa o PDF do Stage 0
-   │  Revisar   │   e decide se avança
-   └─────┬──────┘
-         │
-   [Chamada 2: Stage 1]
-   Gera §8–13 com Stage 0 como contexto
-         │
-   ┌─────▼──────┐
-   │  Gate 1    │ ← usuário revisa o PDF do Stage 1
-   └─────┬──────┘
-         │
-   [Chamada 3: Stage 2]
-   Gera §14–22 + BPMN com Stages 0+1 como contexto
-         │
-   ┌─────▼──────┐
-   │  Gate 2    │ ← usuário revisa o PDF do Stage 2
-   └─────┬──────┘
-         │
-   [Chamada 4: Stage 3]
-   Gera §23–27 com Stages 0+1+2 como contexto
-   + renderiza o Complete Manifest automaticamente
-         │
-         ▼
-   4 PDFs individuais + 1 Complete Manifest
+Input (text or spreadsheet)
+        │
+        ▼
+  [ Call 1 — Stage 0 ]
+  Generates §1–7 only
+        │
+  ┌─────▼──────┐
+  │  Gate 0    │  ← User reviews Stage 0 PDF and decides to proceed
+  └─────┬──────┘
+        │
+  [ Call 2 — Stage 1 ]
+  Generates §8–13 · Stage 0 JSON sent as context
+        │
+  ┌─────▼──────┐
+  │  Gate 1    │  ← User reviews Stage 1 PDF and decides to proceed
+  └─────┬──────┘
+        │
+  [ Call 3 — Stage 2 ]
+  Generates §14–22 + BPMN · Stages 0+1 JSON sent as context
+        │
+  ┌─────▼──────┐
+  │  Gate 2    │  ← User reviews Stage 2 PDF and decides to proceed
+  └─────┬──────┘
+        │
+  [ Call 4 — Stage 3 ]
+  Generates §23–27 · Stages 0+1+2 JSON sent as context
+  Complete Manifest rendered automatically
+        │
+        ▼
+  4 stage PDFs + 1 Complete Manifest
 ```
 
-**Como funciona tecnicamente:**
-- 4 chamadas separadas à API, cada uma enviando os dados dos estágios anteriores como contexto
-- Após cada chamada, o sistema armazena o JSON do estágio no estado da aplicação (memória do navegador)
-- Na próxima chamada, o JSON acumulado é enviado junto com o prompt do próximo estágio
-- O Complete Manifest final é gerado automaticamente após o Stage 3
-
-**Vantagens:**
-- **Controle granular**: o usuário pode revisar e aprovar cada estágio antes de avançar
-- **Rastreabilidade**: cada estágio é um documento independente com sua própria aprovação
-- **Alinhado ao framework**: reflete o processo real do BSD Framework v2.6 com gates formais
-- **Menor risco de falha total**: se uma etapa falhar, apenas ela é retentada
-
-**Limitações:**
-- Mais lento no total (4 chamadas sequenciais)
-- Requer que o usuário esteja disponível para avançar cada gate
-- O contexto enviado para os stages tardios (3 e 4) é truncado para caber no prompt
+| | |
+|-|-|
+| **API calls** | 4 (sequential) |
+| **Internal consistency** | High — each stage receives prior stages as context |
+| **Speed** | Slower total time |
+| **Control** | Full — review and approve each stage before proceeding |
+| **Token budget** | Distributed — smaller per call, context grows progressively |
+| **Failure scope** | Isolated — only the failing stage is retried |
 
 ---
 
-## Quando usar cada modo — Guia de decisão
+## Mode Selection Guide
 
-| Cenário | Modo recomendado |
-|---------|-----------------|
-| Demonstração rápida para stakeholders | Service Card + BPMN |
-| Primeiro rascunho completo de um serviço novo | Full Manifest — Single Pass |
-| Processo formal de design com aprovações por etapa | Full Manifest — Stage by Stage |
-| Reunião de Stage Gate com cliente/gestor | Full Manifest — Stage by Stage |
-| Input é uma planilha complexa de intake | Full Manifest — Single Pass ou Stage by Stage |
-| Quer validar o BPMN antes de avançar para §23–27 | Full Manifest — Stage by Stage |
-| Precisa de documentação rápida para apresentação | Full Manifest — Single Pass |
-
----
-
-## Arquitetura dos documentos gerados
-
-Cada estágio gera um HTML independente com:
-- **Cabeçalho padronizado** com código do serviço, data, badge de estágio e seções cobertas
-- **Tabelas e seções numeradas** exatamente conforme o framework v2.6
-- **Botão "Export PDF"** que usa `window.print()` do navegador para gerar PDF sem dependências externas
-- **BPMN interativo** (apenas Stage 2): viewer bpmn-js embutido com download de SVG, XML e PDF separados
-
-O **Complete Manifest** adiciona:
-- Barra lateral de navegação fixa com links para todas as 27 seções
-- Divisores coloridos entre estágios
-- Scroll suave ao clicar nas seções
+| Scenario | Recommended mode |
+|----------|-----------------|
+| Stakeholder demo or quick prototype | Service Card + BPMN |
+| First complete draft of a new service | Full Manifest — Single Pass |
+| Formal design process with stage approvals | Full Manifest — Stage by Stage |
+| Stage gate meeting with client or manager | Full Manifest — Stage by Stage |
+| Input is a complex intake spreadsheet | Full Manifest — Single Pass or Stage by Stage |
+| Need to validate BPMN before committing to §23–27 | Full Manifest — Stage by Stage |
+| Need documentation quickly for a presentation | Full Manifest — Single Pass |
 
 ---
 
-## Fluxo de dados resumido
+## Document Output Structure
+
+Each stage renders an independent HTML file with:
+
+- Standardised header with service code, generation date, stage badge, and covered sections
+- Numbered sections and tables matching the v2.6 framework exactly
+- **Export PDF** button using `window.print()` — no external dependencies
+- **Interactive BPMN viewer** (Stage 2 only) with SVG, XML, and PDF download buttons
+
+The **Complete Manifest** additionally includes:
+- Fixed left-side navigation bar linking to all 27 sections
+- Colour-coded stage dividers
+- Smooth scroll navigation
+
+---
+
+## AI Model Strategy
+
+All generation modes use the same retry strategy:
+
+| Attempt | Model | Max tokens |
+|---------|-------|-----------|
+| 1–2 | `claude-opus-4-7` (primary) | 6,000–16,000 depending on mode |
+| 3–4 | `claude-sonnet-4-6` (fallback) | 8,000–32,000 depending on mode |
+
+- The server streams the response with a heartbeat every 4 seconds to keep the UI responsive during generation.
+- JSON output is validated against Zod schemas after each attempt. BPMN structure is validated separately for structural errors (disconnected flows, empty branches, gateway violations).
+- If all 4 attempts fail, the system returns an error with the last validation message.
+
+---
+
+## Data Flow
 
 ```
-Usuário digita descrição do serviço
-              │
-              ▼
-     [Next.js — API Route]
-     POST /api/generate
-     { mode, text, stage?, previousStages? }
-              │
-              ▼
-     [Claude API via SSE]
-     Streaming com heartbeat a cada 4s
-     (evita timeout + mantém UI responsiva)
-              │
-              ▼
-     JSON validado pelo Zod Schema
-     (4 tentativas: Haiku x2, Sonnet x2)
-              │
-              ▼
-     BPMN XML gerado + cores aplicadas
-              │
-              ▼
-     HTML templates renderizados
-     (um por estágio)
-              │
-              ▼
-     SSE event: { type: 'manifest_complete', outputs: {...} }
-     ou { type: 'stage_complete', stage: N, html: '...' }
-              │
-              ▼
-     Blob URLs criados no navegador
-     Links abertos em nova aba pelo usuário
+POST /api/generate
+{ mode, text, stage?, previousStages? }
+        │
+        ▼
+Claude API — SSE streaming
+        │
+        ▼
+Zod schema validation (4 attempts: Opus ×2, Sonnet ×2)
+        │
+        ▼
+BPMN XML generated + semantic colours applied
+        │
+        ▼
+HTML templates rendered (one per stage)
+        │
+        ▼
+SSE event sent to browser:
+  manifest_complete → { outputs: { stage0, stage1, stage2, stage3, complete } }
+  stage_complete    → { stage: N, html, manifest }
+        │
+        ▼
+Blob URLs created in browser → user opens in new tab → exports PDF
 ```
 
 ---
 
-## Glossário rápido para apresentações
+## Glossary
 
-| Termo | Significado |
-|-------|-------------|
-| **Service Manifest** | Documento-mestre com todas as 27 seções do framework |
-| **Stage Gate** | Ponto de revisão e aprovação entre estágios |
-| **BPMN 2.0** | Business Process Model and Notation — padrão internacional de diagramas de processo |
-| **OLA** | Operational Level Agreement — prazo interno entre equipes |
-| **SLA** | Service Level Agreement — prazo acordado com o cidadão/cliente |
-| **RACI** | Responsible, Accountable, Consulted, Informed — matriz de responsabilidades |
-| **KPI** | Key Performance Indicator — indicador de desempenho |
-| **WCP** | Workflow Control Pattern — padrão de controle de fluxo (ex: sequência, escolha exclusiva, paralelismo) |
-| **Capability** | Serviço atômico que faz uma coisa do início ao fim |
-| **Composite** | Serviço que agrupa múltiplas capabilities em sequência |
-| **Orchestrating** | Serviço que coordena outros serviços, nunca executando trabalho diretamente |
-| **SSE** | Server-Sent Events — protocolo de streaming do servidor para o navegador em tempo real |
-| **Opus / Sonnet** | Modelos do Claude: Opus 4.7 é o mais capaz e é usado como modelo primário; Sonnet 4.6 é o fallback caso o Opus falhe |
-
----
-
-*Documento gerado para uso interno — DGE Service Orchestrator v2.6*
+| Term | Definition |
+|------|-----------|
+| **Service Manifest** | The master document containing all 27 sections of the framework |
+| **Stage Gate** | Formal review and approval checkpoint between stages |
+| **BPMN 2.0** | Business Process Model and Notation — international standard for process diagrams |
+| **OLA** | Operational Level Agreement — internal SLA between teams |
+| **SLA** | Service Level Agreement — commitment to the citizen or customer |
+| **RACI** | Responsible, Accountable, Consulted, Informed — responsibility assignment matrix |
+| **KPI** | Key Performance Indicator |
+| **WCP** | Workflow Control Pattern — standardised flow pattern (e.g. Sequence, Exclusive Choice, Parallel Split) |
+| **Capability** | Atomic service that does one thing end-to-end |
+| **Composite** | Service that bundles multiple capabilities sequentially |
+| **Orchestrating** | Service that coordinates other services without executing work directly |
+| **SSE** | Server-Sent Events — server-to-browser streaming protocol |
+| **Opus 4.7** | Primary Claude model — most capable, used for all first attempts |
+| **Sonnet 4.6** | Fallback Claude model — used if Opus fails after 2 attempts |
+| **Blob URL** | In-browser URL pointing to a generated HTML file, opened in a new tab |
