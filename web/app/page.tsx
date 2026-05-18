@@ -14,10 +14,10 @@ const STEPS_CARD = [
   'Building combined viewer...',
 ];
 const STEPS_MANIFEST_SINGLE = [
-  'Analyzing service for full manifest...',
-  'Rendering Stage 0 — Service Definition...',
-  'Rendering Stages 1–3 + complete manifest...',
-  'Generating BPMN diagram...',
+  'Generating Stage 0: Service Definition...',
+  'Generating Stage 1: Service Design...',
+  'Generating Stage 2: Task Model & Workflow...',
+  'Generating Stage 3: Build-Ready Requirements...',
   'Packaging all 5 documents...',
 ];
 const STEPS_MANIFEST_STAGE = [
@@ -45,7 +45,6 @@ SLA: Critical 24h end-to-end · PIR within 10 business days
 Channels: Security portal (online) · Service desk (call-center) · Automated SIEM alert (system)
 Owning entity: Abu Dhabi DGE — Information Security Operations`;
 
-// Labels shown in Stage-by-Stage review gates
 const STAGE_LABELS = [
   { num: 0, name: 'Stage 0', desc: 'Service Definition §1–7', color: '#2E7D32' },
   { num: 1, name: 'Stage 1', desc: 'Service Design §8–13', color: '#1565C0' },
@@ -71,6 +70,8 @@ function makeUrl(html: string): string {
   return URL.createObjectURL(new Blob([html], { type: 'text/html' }));
 }
 
+const mono: React.CSSProperties = { fontFamily: '"JetBrains Mono", monospace' };
+
 export default function Home() {
   const [state, setState] = useState<State>('idle');
   const [step, setStep] = useState(0);
@@ -84,13 +85,18 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Result state
-  const [resultUrl, setResultUrl] = useState<string | null>(null); // service-card mode
-  const [manifestOutputs, setManifestOutputs] = useState<ManifestOutputs>({}); // single-pass manifest
-  const [stageResults, setStageResults] = useState<(StageState | null)[]>([null, null, null, null]); // stage-by-stage
+  const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [manifestOutputs, setManifestOutputs] = useState<ManifestOutputs>({});
+  const [stageResults, setStageResults] = useState<(StageState | null)[]>([null, null, null, null]);
   const [currentStage, setCurrentStage] = useState<0 | 1 | 2 | 3>(0);
   const [completedManifestUrl, setCompletedManifestUrl] = useState<string | null>(null);
 
-  // Accumulated manifest data across stage-by-stage calls
+  // Stage-by-stage review state
+  const [pendingReviewStage, setPendingReviewStage] = useState<number | null>(null);
+  const [approvedStages, setApprovedStages] = useState<Set<number>>(new Set());
+  const [stageCorrections, setStageCorrections] = useState<Record<number, string>>({});
+  const [stageRevisions, setStageRevisions] = useState<Record<number, number>>({});
+
   const accumulatedStages = useRef<{ stage0?: Stage0; stage1?: Stage1; stage2?: Stage2 }>({});
 
   const isReady = inputMode === 'text' ? text.trim() !== '' : uploadedFile !== null;
@@ -115,31 +121,123 @@ export default function Home() {
     setCurrentStage(0);
     setCompletedManifestUrl(null);
     accumulatedStages.current = {};
+    setPendingReviewStage(null);
+    setApprovedStages(new Set());
+    setStageCorrections({});
+    setStageRevisions({});
   }
 
-  async function generate(stageOverride?: 0 | 1 | 2 | 3) {
+  async function generate(opts?: { stageOverride?: 0 | 1 | 2 | 3; corrections?: string }) {
     if (!isReady) return;
     setState('loading');
     setStep(0);
     setStepMsg(currentSteps[0]!);
     setError('');
 
-    const stageToGenerate = stageOverride ?? currentStage;
+    const stageToGenerate = opts?.stageOverride ?? currentStage;
+    const corrections = opts?.corrections;
+    const mode = generationMode;
 
     try {
+      // ── manifest-single: 4 separate API calls (one per stage) ──────────────
+      if (mode === 'manifest-single') {
+        const localAccumulated: { stage0?: Stage0; stage1?: Stage1; stage2?: Stage2 } = {};
+        const stageHtmls: Record<string, string> = {};
+
+        for (const sNum of [0, 1, 2, 3] as const) {
+          setStep(sNum);
+          setStepMsg(`Generating Stage ${sNum}...`);
+
+          let res: Response;
+          if (inputMode === 'file' && uploadedFile) {
+            const formData = new FormData();
+            formData.append('file', uploadedFile);
+            formData.append('mode', 'manifest-stage');
+            formData.append('stage', String(sNum));
+            formData.append('previousStages', JSON.stringify(localAccumulated));
+            res = await fetch('/api/generate', { method: 'POST', body: formData });
+          } else {
+            res = await fetch('/api/generate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text, mode: 'manifest-stage', stage: sNum, previousStages: localAccumulated }),
+            });
+          }
+
+          if (!res.ok || !res.body) throw new Error(`Server error: ${res.status}`);
+
+          const decoder = new TextDecoder();
+          const reader = res.body.getReader();
+          let buf = '';
+          let stageReceived = false;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split('\n');
+            buf = lines.pop() ?? '';
+
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue;
+              const event = JSON.parse(line.slice(6)) as {
+                type: string; step?: number; message?: string;
+                html?: string; stage?: number;
+                manifest?: Stage0 | Stage1 | Stage2 | Stage3;
+                completeHtml?: string;
+              };
+              if (event.type === 'progress') {
+                setStepMsg(event.message ?? '');
+              } else if (event.type === 'stage_complete') {
+                stageReceived = true;
+                stageHtmls[`stage${sNum}`] = event.html!;
+                if (sNum === 0) localAccumulated.stage0 = event.manifest as Stage0;
+                if (sNum === 1) localAccumulated.stage1 = event.manifest as Stage1;
+                if (sNum === 2) localAccumulated.stage2 = event.manifest as Stage2;
+                if (event.completeHtml) stageHtmls.complete = event.completeHtml;
+              } else if (event.type === 'error') {
+                throw new Error(event.message ?? 'Unknown error');
+              }
+            }
+          }
+
+          if (!stageReceived) throw new Error(`Stage ${sNum} generation timed out. Please try again.`);
+        }
+
+        setStep(4);
+        setStepMsg('Packaging all 5 documents...');
+
+        const urls: ManifestOutputs = {};
+        if (stageHtmls.stage0) urls.stage0 = makeUrl(stageHtmls.stage0);
+        if (stageHtmls.stage1) urls.stage1 = makeUrl(stageHtmls.stage1);
+        if (stageHtmls.stage2) urls.stage2 = makeUrl(stageHtmls.stage2);
+        if (stageHtmls.stage3) urls.stage3 = makeUrl(stageHtmls.stage3);
+        if (stageHtmls.complete) urls.complete = makeUrl(stageHtmls.complete);
+        setManifestOutputs(urls);
+        setState('idle');
+        return;
+      }
+
+      // ── service-card and manifest-stage: single API call ────────────────────
+      let receivedResult = false;
       let res: Response;
-      const mode = generationMode;
 
       if (inputMode === 'file' && uploadedFile) {
         const formData = new FormData();
         formData.append('file', uploadedFile);
         formData.append('mode', mode);
+        if (mode === 'manifest-stage') {
+          formData.append('stage', String(stageToGenerate));
+          formData.append('previousStages', JSON.stringify(accumulatedStages.current));
+          if (corrections) formData.append('corrections', corrections);
+        }
         res = await fetch('/api/generate', { method: 'POST', body: formData });
       } else {
         const body: Record<string, unknown> = { text, mode };
         if (mode === 'manifest-stage') {
           body.stage = stageToGenerate;
           body.previousStages = accumulatedStages.current;
+          if (corrections) body.corrections = corrections;
         }
         res = await fetch('/api/generate', {
           method: 'POST',
@@ -178,13 +276,12 @@ export default function Home() {
             setStepMsg(event.message ?? '');
 
           } else if (event.type === 'complete' && event.html) {
-            // Service card mode
-            const url = makeUrl(event.html);
-            setResultUrl(url);
+            receivedResult = true;
+            setResultUrl(makeUrl(event.html));
             setState('idle');
 
           } else if (event.type === 'manifest_complete' && event.outputs) {
-            // Mode A: single-pass — turn HTML strings into blob URLs
+            receivedResult = true;
             const urls: ManifestOutputs = {};
             if (event.outputs.stage0) urls.stage0 = makeUrl(event.outputs.stage0);
             if (event.outputs.stage1) urls.stage1 = makeUrl(event.outputs.stage1);
@@ -195,12 +292,11 @@ export default function Home() {
             setState('idle');
 
           } else if (event.type === 'stage_complete') {
-            // Mode B: stage-by-stage
+            receivedResult = true;
             const sNum = event.stage as 0 | 1 | 2 | 3;
             const url = makeUrl(event.html!);
             const stageState: StageState = { html: event.html!, url, manifest: event.manifest! };
 
-            // Accumulate manifest data for next stage calls
             if (sNum === 0) accumulatedStages.current.stage0 = event.manifest as Stage0;
             if (sNum === 1) accumulatedStages.current.stage1 = event.manifest as Stage1;
             if (sNum === 2) accumulatedStages.current.stage2 = event.manifest as Stage2;
@@ -211,10 +307,10 @@ export default function Home() {
               return next;
             });
 
-            if (event.completeHtml) {
-              setCompletedManifestUrl(makeUrl(event.completeHtml));
-            }
+            if (event.completeHtml) setCompletedManifestUrl(makeUrl(event.completeHtml));
 
+            // Show review panel — don't auto-advance
+            setPendingReviewStage(sNum);
             setState('idle');
 
           } else if (event.type === 'error') {
@@ -222,15 +318,40 @@ export default function Home() {
           }
         }
       }
+
+      if (!receivedResult) {
+        throw new Error('Generation timed out or the connection was interrupted. Please try again.');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setState('error');
     }
   }
 
-  function proceedToStage(n: 0 | 1 | 2 | 3) {
-    setCurrentStage(n);
-    generate(n);
+  function approveStage(stageNum: number) {
+    setApprovedStages(prev => new Set([...prev, stageNum]));
+    setPendingReviewStage(null);
+    if (stageNum < 3) {
+      const next = (stageNum + 1) as 0 | 1 | 2 | 3;
+      setCurrentStage(next);
+      generate({ stageOverride: next });
+    }
+    // Stage 3: complete manifest already generated by API on stage_complete
+  }
+
+  function submitCorrection(stageNum: number) {
+    const correction = stageCorrections[stageNum] ?? '';
+    if (!correction.trim()) return;
+    setStageRevisions(prev => ({ ...prev, [stageNum]: (prev[stageNum] ?? 0) + 1 }));
+    setStageCorrections(prev => ({ ...prev, [stageNum]: '' }));
+    setStageResults(prev => {
+      const next = [...prev] as (StageState | null)[];
+      next[stageNum] = null;
+      return next;
+    });
+    setPendingReviewStage(null);
+    setCurrentStage(stageNum as 0 | 1 | 2 | 3);
+    generate({ stageOverride: stageNum as 0 | 1 | 2 | 3, corrections: correction });
   }
 
   function handleFileSelect(file: File) {
@@ -261,36 +382,20 @@ export default function Home() {
 
   const hasSinglePassResults = Object.keys(manifestOutputs).length > 0;
   const hasServiceCardResult = resultUrl !== null;
-  const hasAnyResult = hasSinglePassResults || hasServiceCardResult || stageResults.some(s => s !== null);
+  const hasAnyStageResult = stageResults.some(s => s !== null);
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '40px 20px',
-    }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
+
       {/* Header */}
       <div style={{ textAlign: 'center', marginBottom: 48, maxWidth: 640 }}>
-        <div style={{
-          fontFamily: '"JetBrains Mono", monospace',
-          fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.18em',
-          color: 'var(--muted)', marginBottom: 16,
-          display: 'flex', gap: 16, justifyContent: 'center', alignItems: 'baseline',
-        }}>
+        <div style={{ ...mono, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.18em', color: 'var(--muted)', marginBottom: 16, display: 'flex', gap: 16, justifyContent: 'center', alignItems: 'baseline' }}>
           <span style={{ color: 'var(--accent)' }}>●</span>
           <span>DGE Service Orchestrator</span>
           <span>·</span>
           <span>Business Service Design Framework v2.6</span>
         </div>
-        <h1 style={{
-          fontFamily: 'Georgia, serif',
-          fontWeight: 900, fontSize: 'clamp(32px, 5vw, 56px)',
-          lineHeight: 0.95, letterSpacing: '-0.02em',
-          margin: '0 0 16px', color: 'var(--ink)',
-        }}>
+        <h1 style={{ fontFamily: 'Georgia, serif', fontWeight: 900, fontSize: 'clamp(32px, 5vw, 56px)', lineHeight: 0.95, letterSpacing: '-0.02em', margin: '0 0 16px', color: 'var(--ink)' }}>
           Describe your service.<br />
           <span style={{ color: 'var(--accent)' }}>We generate the rest.</span>
         </h1>
@@ -304,63 +409,23 @@ export default function Home() {
       <div style={{ width: '100%', maxWidth: 720 }}>
 
         {/* Generation mode selector */}
-        <div style={{
-          marginBottom: 20,
-          padding: '16px 20px',
-          background: 'var(--paper-2)',
-          border: '1.5px solid var(--rule)',
-        }}>
-          <div style={{
-            fontFamily: '"JetBrains Mono", monospace', fontSize: 10,
-            textTransform: 'uppercase', letterSpacing: '0.12em',
-            color: 'var(--muted)', marginBottom: 12,
-          }}>
+        <div style={{ marginBottom: 20, padding: '16px 20px', background: 'var(--paper-2)', border: '1.5px solid var(--rule)' }}>
+          <div style={{ ...mono, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--muted)', marginBottom: 12 }}>
             Generation Mode
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {([
-              {
-                id: 'service-card' as GenerationMode,
-                label: 'Service Card + BPMN',
-                desc: 'Quick generation: service card + BPMN diagram in one combined viewer',
-              },
-              {
-                id: 'manifest-single' as GenerationMode,
-                label: 'Full Manifest — Single Pass',
-                desc: 'Generates all 4 stages at once (§1–27). Opens 5 separate PDF documents.',
-              },
-              {
-                id: 'manifest-stage' as GenerationMode,
-                label: 'Full Manifest — Stage by Stage',
-                desc: 'Generates one stage at a time with review gates between each stage.',
-              },
+              { id: 'service-card' as GenerationMode, label: 'Service Card + BPMN', desc: 'Quick generation: service card + BPMN diagram in one combined viewer' },
+              { id: 'manifest-single' as GenerationMode, label: 'Full Manifest — Single Pass', desc: 'Generates all 4 stages at once (§1–27). Opens 5 separate PDF documents.' },
+              { id: 'manifest-stage' as GenerationMode, label: 'Full Manifest — Stage by Stage', desc: 'Generates one stage at a time. Review and approve each stage before proceeding.' },
             ] as const).map(opt => (
-              <label key={opt.id} style={{
-                display: 'flex', alignItems: 'flex-start', gap: 10,
-                cursor: 'pointer', padding: '10px 12px',
-                background: generationMode === opt.id ? '#fff' : 'transparent',
-                border: `1.5px solid ${generationMode === opt.id ? 'var(--ink)' : 'transparent'}`,
-                transition: 'all 0.15s',
-              }}>
-                <input
-                  type="radio"
-                  name="generationMode"
-                  value={opt.id}
-                  checked={generationMode === opt.id}
+              <label key={opt.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '10px 12px', background: generationMode === opt.id ? '#fff' : 'transparent', border: `1.5px solid ${generationMode === opt.id ? 'var(--ink)' : 'transparent'}`, transition: 'all 0.15s' }}>
+                <input type="radio" name="generationMode" value={opt.id} checked={generationMode === opt.id}
                   onChange={() => { setGenerationMode(opt.id); resetResults(); }}
-                  style={{ marginTop: 2, accentColor: 'var(--ink)', flexShrink: 0 }}
-                />
+                  style={{ marginTop: 2, accentColor: 'var(--ink)', flexShrink: 0 }} />
                 <div>
-                  <div style={{
-                    fontFamily: '"JetBrains Mono", monospace', fontSize: 11,
-                    fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em',
-                    color: generationMode === opt.id ? 'var(--ink)' : 'var(--muted)',
-                  }}>
-                    {opt.label}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
-                    {opt.desc}
-                  </div>
+                  <div style={{ ...mono, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: generationMode === opt.id ? 'var(--ink)' : 'var(--muted)' }}>{opt.label}</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>{opt.desc}</div>
                 </div>
               </label>
             ))}
@@ -370,20 +435,9 @@ export default function Home() {
         {/* Input mode tabs */}
         <div style={{ display: 'flex', marginBottom: 0, borderBottom: '2px solid var(--rule)' }}>
           {(['text', 'file'] as InputMode[]).map(mode => (
-            <button
-              key={mode}
+            <button key={mode}
               onClick={() => { setInputMode(mode); setError(''); if (state === 'error') setState('idle'); }}
-              style={{
-                padding: '10px 20px',
-                background: 'transparent', border: 'none',
-                borderBottom: inputMode === mode ? '2px solid var(--ink)' : '2px solid transparent',
-                marginBottom: -2, cursor: 'pointer',
-                fontFamily: '"JetBrains Mono", monospace',
-                fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em',
-                color: inputMode === mode ? 'var(--ink)' : 'var(--muted)',
-                fontWeight: inputMode === mode ? 600 : 400,
-              }}
-            >
+              style={{ padding: '10px 20px', background: 'transparent', border: 'none', borderBottom: inputMode === mode ? '2px solid var(--ink)' : '2px solid transparent', marginBottom: -2, cursor: 'pointer', ...mono, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: inputMode === mode ? 'var(--ink)' : 'var(--muted)', fontWeight: inputMode === mode ? 600 : 400 }}>
               {mode === 'text' ? '✎ Text' : '↑ Upload File'}
             </button>
           ))}
@@ -391,68 +445,35 @@ export default function Home() {
 
         {/* Text input */}
         {inputMode === 'text' && (
-          <textarea
-            value={text}
-            onChange={e => setText(e.target.value)}
-            placeholder={EXAMPLE}
-            disabled={state === 'loading'}
-            rows={8}
-            style={{
-              width: '100%', padding: '20px 24px',
-              fontSize: 14.5, lineHeight: 1.65, color: 'var(--ink)',
-              background: '#fff', border: '2px solid var(--rule)',
-              borderTop: 'none', borderRadius: 0, outline: 'none',
-              resize: 'vertical', fontFamily: 'inherit',
-              boxSizing: 'border-box',
-            }}
+          <textarea value={text} onChange={e => setText(e.target.value)} placeholder={EXAMPLE}
+            disabled={state === 'loading'} rows={8}
+            style={{ width: '100%', padding: '20px 24px', fontSize: 14.5, lineHeight: 1.65, color: 'var(--ink)', background: '#fff', border: '2px solid var(--rule)', borderTop: 'none', borderRadius: 0, outline: 'none', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
             onFocus={e => { e.target.style.borderColor = 'var(--ink)'; }}
-            onBlur={e => { e.target.style.borderColor = 'var(--rule)'; }}
-          />
+            onBlur={e => { e.target.style.borderColor = 'var(--rule)'; }} />
         )}
 
         {/* File upload */}
         {inputMode === 'file' && (
-          <div
-            onDrop={onDrop} onDragOver={onDragOver} onDragLeave={onDragLeave}
+          <div onDrop={onDrop} onDragOver={onDragOver} onDragLeave={onDragLeave}
             onClick={() => !uploadedFile && fileInputRef.current?.click()}
-            style={{
-              border: `2px ${isDragging ? 'solid' : 'dashed'} ${isDragging ? 'var(--ink)' : 'var(--rule)'}`,
-              borderTop: 'none',
-              background: isDragging ? 'var(--paper-2)' : '#fff',
-              padding: '40px 24px',
-              display: 'flex', flexDirection: 'column', alignItems: 'center',
-              gap: 12, cursor: uploadedFile ? 'default' : 'pointer',
-              minHeight: 160, justifyContent: 'center',
-            }}
-          >
-            <input
-              ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv,.ods"
-              style={{ display: 'none' }}
-              onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); }}
-            />
+            style={{ border: `2px ${isDragging ? 'solid' : 'dashed'} ${isDragging ? 'var(--ink)' : 'var(--rule)'}`, borderTop: 'none', background: isDragging ? 'var(--paper-2)' : '#fff', padding: '40px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, cursor: uploadedFile ? 'default' : 'pointer', minHeight: 160, justifyContent: 'center' }}>
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv,.ods" style={{ display: 'none' }}
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); }} />
             {!uploadedFile ? (
               <>
                 <div style={{ fontSize: 32, lineHeight: 1 }}>📊</div>
-                <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--muted)' }}>
-                  Drop file here or click to browse
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                  Supports .xlsx · .xls · .csv · .ods — all sheets will be read
-                </div>
+                <div style={{ ...mono, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--muted)' }}>Drop file here or click to browse</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>Supports .xlsx · .xls · .csv · .ods — all sheets will be read</div>
               </>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', background: 'var(--paper-2)', border: '1.5px solid var(--rule)', width: '100%', boxSizing: 'border-box' }}>
                 <span style={{ fontSize: 24 }}>📄</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 500, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{uploadedFile.name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--muted)', fontFamily: '"JetBrains Mono", monospace', marginTop: 3 }}>
-                    {(uploadedFile.size / 1024).toFixed(1)} KB · ready to generate
-                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', ...mono, marginTop: 3 }}>{(uploadedFile.size / 1024).toFixed(1)} KB · ready to generate</div>
                 </div>
-                <button
-                  onClick={e => { e.stopPropagation(); setUploadedFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
-                  style={{ background: 'transparent', border: '1.5px solid var(--rule)', cursor: 'pointer', padding: '4px 10px', fontFamily: '"JetBrains Mono", monospace', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', flexShrink: 0 }}
-                >
+                <button onClick={e => { e.stopPropagation(); setUploadedFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                  style={{ background: 'transparent', border: '1.5px solid var(--rule)', cursor: 'pointer', padding: '4px 10px', ...mono, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', flexShrink: 0 }}>
                   ✕ Remove
                 </button>
               </div>
@@ -462,31 +483,13 @@ export default function Home() {
 
         {/* Generate button */}
         <div style={{ marginTop: 16, display: 'flex', gap: 12, alignItems: 'center' }}>
-          <button
-            onClick={() => generate()}
-            disabled={state === 'loading' || !isReady}
-            style={{
-              padding: '14px 32px',
-              background: state === 'loading' || !isReady ? 'var(--muted)' : 'var(--ink)',
-              color: 'var(--paper)', border: 'none',
-              cursor: state === 'loading' || !isReady ? 'default' : 'pointer',
-              fontFamily: '"JetBrains Mono", monospace',
-              fontSize: 12, fontWeight: 600,
-              textTransform: 'uppercase', letterSpacing: '0.1em',
-            }}
-          >
+          <button onClick={() => generate()} disabled={state === 'loading' || !isReady}
+            style={{ padding: '14px 32px', background: state === 'loading' || !isReady ? 'var(--muted)' : 'var(--ink)', color: 'var(--paper)', border: 'none', cursor: state === 'loading' || !isReady ? 'default' : 'pointer', ...mono, fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
             {state === 'loading' ? 'Generating...' : 'Generate →'}
           </button>
           {inputMode === 'text' && text.trim() === '' && (
-            <button
-              onClick={() => setText(EXAMPLE)}
-              style={{
-                padding: '14px 20px', background: 'transparent',
-                color: 'var(--muted)', border: '1.5px solid var(--rule)',
-                cursor: 'pointer', fontFamily: '"JetBrains Mono", monospace',
-                fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em',
-              }}
-            >
+            <button onClick={() => setText(EXAMPLE)}
+              style={{ padding: '14px 20px', background: 'transparent', color: 'var(--muted)', border: '1.5px solid var(--rule)', cursor: 'pointer', ...mono, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
               Load example
             </button>
           )}
@@ -495,17 +498,10 @@ export default function Home() {
         {/* Progress */}
         {state === 'loading' && (
           <div style={{ marginTop: 32, padding: '24px 28px', background: 'var(--paper-2)', borderLeft: '3px solid var(--accent)' }}>
-            <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--muted)', marginBottom: 16 }}>
-              Processing
-            </div>
+            <div style={{ ...mono, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--muted)', marginBottom: 16 }}>Processing</div>
             {currentSteps.map((s, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, opacity: i > step ? 0.35 : 1, transition: 'opacity 0.3s' }}>
-                <span style={{
-                  width: 20, height: 20, borderRadius: '50%',
-                  background: i < step ? 'var(--accent)' : i === step ? 'var(--ink)' : 'var(--rule)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: i <= step ? '#fff' : 'var(--muted)', fontSize: 10, fontWeight: 700, flexShrink: 0,
-                }}>
+                <span style={{ width: 20, height: 20, borderRadius: '50%', background: i < step ? 'var(--accent)' : i === step ? 'var(--ink)' : 'var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: i <= step ? '#fff' : 'var(--muted)', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
                   {i < step ? '✓' : i + 1}
                 </span>
                 <span style={{ fontSize: 13, color: i === step ? 'var(--ink)' : 'var(--muted)', fontWeight: i === step ? 500 : 400 }}>
@@ -520,32 +516,22 @@ export default function Home() {
         {hasServiceCardResult && state === 'idle' && (
           <div style={{ marginTop: 24, padding: '20px 24px', background: '#F1F8F1', borderLeft: '3px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
             <div>
-              <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--accent)', marginBottom: 4 }}>
-                ✓ Done
-              </div>
-              <p style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--ink)' }}>
-                Service Card + BPMN generated successfully.
-              </p>
-              <a
-                href={resultUrl!}
-                target="_blank"
-                rel="noopener noreferrer"
+              <div style={{ ...mono, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--accent)', marginBottom: 4 }}>✓ Done</div>
+              <p style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--ink)' }}>Service Card + BPMN generated successfully.</p>
+              <a href={resultUrl!} target="_blank" rel="noopener noreferrer"
                 onClick={() => setTimeout(() => { URL.revokeObjectURL(resultUrl!); setResultUrl(null); }, 60000)}
-                style={{ display: 'inline-block', padding: '8px 18px', background: 'var(--ink)', color: 'var(--paper)', textDecoration: 'none', fontFamily: '"JetBrains Mono", monospace', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em' }}
-              >
+                style={{ display: 'inline-block', padding: '8px 18px', background: 'var(--ink)', color: 'var(--paper)', textDecoration: 'none', ...mono, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
                 Open Result in New Tab →
               </a>
             </div>
-            <button onClick={() => { setResultUrl(null); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--muted)', flexShrink: 0 }}>×</button>
+            <button onClick={() => setResultUrl(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--muted)', flexShrink: 0 }}>×</button>
           </div>
         )}
 
         {/* ── Result: Single-Pass Manifest mode ── */}
         {hasSinglePassResults && state === 'idle' && (
           <div style={{ marginTop: 24, padding: '24px', background: '#F1F8F1', borderLeft: '3px solid var(--accent)' }}>
-            <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--accent)', marginBottom: 12 }}>
-              ✓ Service Manifest Generated — 5 Documents
-            </div>
+            <div style={{ ...mono, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--accent)', marginBottom: 12 }}>✓ Service Manifest Generated — 5 Documents</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {STAGE_LABELS.map(sl => {
                 const url = manifestOutputs[`stage${sl.num}` as keyof ManifestOutputs];
@@ -553,10 +539,8 @@ export default function Home() {
                   <a key={sl.num} href={url} target="_blank" rel="noopener noreferrer"
                     style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: '#fff', border: `1.5px solid ${sl.color}`, textDecoration: 'none', color: 'var(--ink)' }}>
                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: sl.color, flexShrink: 0 }} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{sl.name} — {sl.desc}</div>
-                    </div>
-                    <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 10, color: 'var(--muted)' }}>Open →</span>
+                    <div style={{ flex: 1, ...mono, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{sl.name} — {sl.desc}</div>
+                    <span style={{ ...mono, fontSize: 10, color: 'var(--muted)' }}>Open →</span>
                   </a>
                 ) : null;
               })}
@@ -564,10 +548,8 @@ export default function Home() {
                 <a href={manifestOutputs.complete} target="_blank" rel="noopener noreferrer"
                   style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--ink)', textDecoration: 'none', color: '#fff', marginTop: 4 }}>
                   <span style={{ fontSize: 14 }}>📄</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Complete Manifest §1–27</div>
-                  </div>
-                  <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 10 }}>Open →</span>
+                  <div style={{ flex: 1, ...mono, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Complete Manifest §1–27</div>
+                  <span style={{ ...mono, fontSize: 10 }}>Open →</span>
                 </a>
               )}
             </div>
@@ -575,98 +557,175 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── Result: Stage-by-Stage mode ── */}
-        {generationMode === 'manifest-stage' && stageResults.some(s => s !== null) && (
-          <div style={{ marginTop: 24, padding: '24px', background: 'var(--paper-2)', borderLeft: '3px solid var(--accent)' }}>
-            <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--muted)', marginBottom: 16 }}>
+        {/* ── Result: Stage-by-Stage mode with Review/Approval Loop ── */}
+        {generationMode === 'manifest-stage' && (hasAnyStageResult || state === 'loading' || pendingReviewStage !== null) && (
+          <div style={{ marginTop: 24 }}>
+            <div style={{ ...mono, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--muted)', marginBottom: 16, padding: '0 4px' }}>
               Stage-by-Stage Progress
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {STAGE_LABELS.map(sl => {
                 const result = stageResults[sl.num];
-                const isCurrentTarget = currentStage === sl.num && state === 'loading';
-                const isDone = result !== null;
-                const isNext = !isDone && stageResults[sl.num - 1] !== null && sl.num > 0 && state === 'idle';
-                const isFirst = sl.num === 0 && !isDone && state === 'idle';
+                const isGenerating = currentStage === sl.num && state === 'loading';
+                const isPendingReview = pendingReviewStage === sl.num && state === 'idle';
+                const isApproved = approvedStages.has(sl.num);
+                const revCount = stageRevisions[sl.num] ?? 0;
+                const corrText = stageCorrections[sl.num] ?? '';
 
-                return (
-                  <div key={sl.num} style={{
-                    padding: '14px 16px',
-                    background: isDone ? '#fff' : 'transparent',
-                    border: `1.5px solid ${isDone ? sl.color : 'var(--rule)'}`,
-                    opacity: (!isDone && !isCurrentTarget && !isNext && !isFirst) ? 0.4 : 1,
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                // Approved stage — compact card
+                if (isApproved && result) {
+                  return (
+                    <div key={sl.num} style={{ padding: '14px 16px', background: '#fff', border: `1.5px solid ${sl.color}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span style={{
-                          width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
-                          background: isDone ? sl.color : isCurrentTarget ? 'var(--ink)' : 'var(--rule)',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          color: '#fff', fontSize: 10, fontWeight: 700,
-                        }}>
-                          {isDone ? '✓' : sl.num + 1}
-                        </span>
+                        <span style={{ width: 22, height: 22, borderRadius: '50%', background: sl.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>✓</span>
                         <div>
-                          <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: isDone ? sl.color : 'var(--muted)' }}>
-                            {sl.name}
+                          <div style={{ ...mono, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: sl.color }}>{sl.name} — {sl.desc}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                            Approved{revCount > 0 ? ` · ${revCount} revision${revCount > 1 ? 's' : ''}` : ''}
                           </div>
-                          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 1 }}>{sl.desc}</div>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                        {isDone && result && (
-                          <a href={result.url} target="_blank" rel="noopener noreferrer"
-                            style={{ padding: '6px 14px', background: sl.color, color: '#fff', textDecoration: 'none', fontFamily: '"JetBrains Mono", monospace', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                            Open PDF →
-                          </a>
-                        )}
-                        {(isNext || isFirst) && state === 'idle' && (
-                          <button
-                            onClick={() => proceedToStage(sl.num as 0 | 1 | 2 | 3)}
-                            style={{ padding: '6px 14px', background: 'var(--ink)', color: 'var(--paper)', border: 'none', cursor: 'pointer', fontFamily: '"JetBrains Mono", monospace', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}
-                          >
-                            {sl.num === 0 ? 'Generate →' : `Generate ${sl.name} →`}
-                          </button>
-                        )}
-                        {isCurrentTarget && (
-                          <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 10, color: 'var(--muted)', padding: '6px 0' }}>Generating...</span>
-                        )}
+                      <a href={result.url} target="_blank" rel="noopener noreferrer"
+                        style={{ padding: '5px 12px', background: sl.color, color: '#fff', textDecoration: 'none', ...mono, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', flexShrink: 0 }}>
+                        📄 PDF →
+                      </a>
+                    </div>
+                  );
+                }
+
+                // Generating spinner
+                if (isGenerating) {
+                  return (
+                    <div key={sl.num} style={{ padding: '16px', background: 'var(--paper-2)', border: '1.5px solid var(--rule)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <span style={{ width: 22, height: 22, borderRadius: '50%', background: 'var(--ink)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
+                        {sl.num + 1}
+                      </span>
+                      <div>
+                        <div style={{ ...mono, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{sl.name} — {sl.desc}</div>
+                        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{stepMsg || 'Generating...'}</div>
                       </div>
                     </div>
-                  </div>
-                );
+                  );
+                }
+
+                // Review panel — awaiting user decision
+                if (isPendingReview && result) {
+                  return (
+                    <div key={sl.num} style={{ border: `2px solid ${sl.color}`, background: '#fff' }}>
+                      {/* Stage header */}
+                      <div style={{ padding: '14px 18px', background: sl.color, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ ...mono, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#fff' }}>
+                            {sl.name} — {sl.desc}
+                          </span>
+                          {revCount > 0 && (
+                            <span style={{ ...mono, fontSize: 10, padding: '2px 8px', background: 'rgba(255,255,255,0.2)', color: '#fff', borderRadius: 2 }}>
+                              Revision {revCount}
+                            </span>
+                          )}
+                        </div>
+                        <a href={result.url} target="_blank" rel="noopener noreferrer"
+                          style={{ padding: '6px 14px', background: 'rgba(255,255,255,0.15)', color: '#fff', textDecoration: 'none', border: '1px solid rgba(255,255,255,0.4)', ...mono, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', flexShrink: 0 }}>
+                          📄 Open PDF →
+                        </a>
+                      </div>
+
+                      <div style={{ padding: '20px 18px' }}>
+                        {/* Approve section */}
+                        <div style={{ marginBottom: 20, padding: '16px', background: '#F1F8F1', border: '1.5px solid #C8E6C9' }}>
+                          <div style={{ ...mono, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#2E7D32', marginBottom: 10 }}>
+                            ✓ Review & Approve
+                          </div>
+                          <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--ink)', lineHeight: 1.5 }}>
+                            Open the PDF above, review the content, then approve to proceed to the next stage.
+                          </p>
+                          <button onClick={() => approveStage(sl.num)}
+                            style={{ padding: '10px 24px', background: '#2E7D32', color: '#fff', border: 'none', cursor: 'pointer', ...mono, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                            ✓ Approve{sl.num < 3 ? ` & Generate ${STAGE_LABELS[sl.num + 1]?.name}` : ' & Generate Complete Manifest'}
+                          </button>
+                        </div>
+
+                        {/* Correction section */}
+                        <div style={{ borderTop: '1px solid var(--rule)', paddingTop: 16 }}>
+                          <div style={{ ...mono, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: 10 }}>
+                            ↩ Request Corrections
+                          </div>
+                          <textarea
+                            value={corrText}
+                            onChange={e => setStageCorrections(prev => ({ ...prev, [sl.num]: e.target.value }))}
+                            placeholder={`Describe what needs to be corrected in ${sl.name}...\n\nExample: "Add more detail to Section 2 touchpoints. Change the SLA from 5 days to 3 days. The service owner should be the Head of Procurement."`}
+                            rows={5}
+                            style={{ width: '100%', padding: '12px 14px', fontSize: 13, lineHeight: 1.6, color: 'var(--ink)', background: '#fff', border: '1.5px solid var(--rule)', outline: 'none', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
+                            onFocus={e => { e.target.style.borderColor = sl.color; }}
+                            onBlur={e => { e.target.style.borderColor = 'var(--rule)'; }}
+                          />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10 }}>
+                            <button onClick={() => submitCorrection(sl.num)}
+                              disabled={!corrText.trim()}
+                              style={{ padding: '9px 20px', background: corrText.trim() ? sl.color : 'var(--muted)', color: '#fff', border: 'none', cursor: corrText.trim() ? 'pointer' : 'default', ...mono, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                              ↩ Submit Correction →
+                            </button>
+                            <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                              A revised version will be generated based on your feedback.
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Not yet started — show pending placeholder
+                const isPreviousApproved = sl.num === 0 || approvedStages.has(sl.num - 1);
+                if (!result && !isGenerating) {
+                  return (
+                    <div key={sl.num} style={{ padding: '14px 16px', background: 'transparent', border: '1.5px solid var(--rule)', opacity: isPreviousApproved ? 0.6 : 0.3 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ width: 22, height: 22, borderRadius: '50%', background: 'var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
+                          {sl.num + 1}
+                        </span>
+                        <div>
+                          <div style={{ ...mono, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>{sl.name} — {sl.desc}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                            {sl.num === 0 ? 'Click Generate → above to start' : `Awaiting ${STAGE_LABELS[sl.num - 1]?.name} approval`}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return null;
               })}
             </div>
 
+            {/* Complete Manifest */}
             {completedManifestUrl && (
               <a href={completedManifestUrl} target="_blank" rel="noopener noreferrer"
-                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: 'var(--ink)', textDecoration: 'none', color: '#fff', marginTop: 16 }}>
-                <span style={{ fontSize: 14 }}>📄</span>
-                <div style={{ flex: 1, fontFamily: '"JetBrains Mono", monospace', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                  Complete Manifest §1–27 — All Stages
+                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', background: 'var(--ink)', textDecoration: 'none', color: '#fff', marginTop: 20 }}>
+                <span style={{ fontSize: 16 }}>📄</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ ...mono, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Complete Manifest §1–27 — All Stages</div>
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,.6)', marginTop: 2 }}>All sections consolidated in a single document</div>
                 </div>
-                <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 10 }}>Open →</span>
+                <span style={{ ...mono, fontSize: 10 }}>Open →</span>
               </a>
             )}
 
-            <button onClick={() => { resetResults(); setCurrentStage(0); }} style={{ marginTop: 14, background: 'transparent', border: '1.5px solid var(--rule)', cursor: 'pointer', padding: '6px 14px', fontFamily: '"JetBrains Mono", monospace', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>
+            <button onClick={() => { resetResults(); setState('idle'); }}
+              style={{ marginTop: 14, background: 'transparent', border: '1.5px solid var(--rule)', cursor: 'pointer', padding: '6px 14px', ...mono, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>
               ↺ Start Over
             </button>
           </div>
         )}
 
-        {/* For stage-by-stage: show generate button for stage 0 if no results yet */}
-        {generationMode === 'manifest-stage' && !stageResults.some(s => s !== null) && state === 'idle' && !hasAnyResult && null}
-
         {/* Error */}
         {state === 'error' && (
           <div style={{ marginTop: 24, padding: '20px 24px', background: '#FFF5F5', borderLeft: '3px solid var(--error)' }}>
-            <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--error)', marginBottom: 8 }}>
-              Error
-            </div>
+            <div style={{ ...mono, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--error)', marginBottom: 8 }}>Error</div>
             <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)' }}>{error}</p>
-            <button onClick={() => setState('idle')} style={{ marginTop: 14, padding: '8px 16px', background: 'transparent', border: '1.5px solid var(--rule)', cursor: 'pointer', fontFamily: '"JetBrains Mono", monospace', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            <button onClick={() => setState('idle')} style={{ marginTop: 14, padding: '8px 16px', background: 'transparent', border: '1.5px solid var(--rule)', cursor: 'pointer', ...mono, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
               Try again
             </button>
           </div>
@@ -674,12 +733,7 @@ export default function Home() {
       </div>
 
       {/* Footer */}
-      <div style={{
-        marginTop: 64, textAlign: 'center',
-        fontFamily: '"JetBrains Mono", monospace',
-        fontSize: 10.5, color: 'var(--muted)',
-        letterSpacing: '0.06em', textTransform: 'uppercase',
-      }}>
+      <div style={{ marginTop: 64, textAlign: 'center', ...mono, fontSize: 10.5, color: 'var(--muted)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
         Abu Dhabi DGE · Business Service Design Framework v2.6 · BPMN 2.0
       </div>
     </div>

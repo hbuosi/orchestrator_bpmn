@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
 const ColorKeySchema = z.enum([
-  'happy', 'error', 'cancel', 'compensation',
-  'system', 'manual', 'subprocess', 'default',
+  'happy', 'happy_end', 'error', 'cancel', 'compensation',
+  'system', 'manual', 'decision', 'subprocess', 'default',
 ]);
 
 const BaseElementSchema = z.object({

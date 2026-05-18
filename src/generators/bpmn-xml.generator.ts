@@ -13,9 +13,9 @@ const SIZES: Record<string, { w: number; h: number }> = {
   subProcess: { w: 200, h: 80 },
 };
 const TASK_SIZE = { w: 120, h: 80 };
-const GAP_X = 60;          // horizontal gap between sequential elements
-const BRANCH_GAP_X = 150;  // wider gap gateway→branch so condition labels never overlap elements
-const GAP_Y = 60;          // vertical gap between parallel branches
+const GAP_X = 80;           // horizontal gap between sequential elements (was 60)
+const BRANCH_GAP_X = 180;   // corridor gateway→branch for condition labels (was 150)
+const GAP_Y = 120;          // vertical gap between parallel branches (was 60)
 const ORIGIN_X = 30;
 const ORIGIN_Y = 240; // center-Y of the main (happy) flow
 
@@ -197,21 +197,25 @@ function labelBounds(
 ): { x: number; y: number; w: number; h: number } | null {
   if (!name) return null;
   const { x1, y1, x2, y2, midX, straight } = flowGeometry(src, tgt);
+
   if (straight) {
     const lw = Math.max(name.length * 7 + 12, 50);
-    return { x: Math.round(midX - lw / 2), y: y1 - 28, w: lw, h: 18 };
+    return { x: Math.round(midX - lw / 2), y: y1 + 6, w: lw, h: 18 };
   }
-  // L-shaped gateway→branch: use the FULL BRANCH_GAP_X corridor for label width so that
-  // even long condition text fits in 1-2 lines and never overflows into the opposite label.
-  // Anchored above the outgoing horizontal for up-branches, below for down-branches.
+  // L-shaped gateway→branch condition label.
+  // Critical fix: anchor Y to the gateway BOUNDING BOX edges (src.y / src.y+src.h),
+  // not to the flow centre-line (y1), which places labels inside the diamond.
   const corridorW = Math.max(x2 - x1 - 16, 60);
   const rawW = name.length * 7 + 12;
   const lw = Math.min(rawW, corridorW);
-  // Word-wrap only fills ~75% of box width on average; use that factor for line-count estimate.
   const lines = Math.max(Math.ceil(rawW / (corridorW * 0.75)), 1);
   const lh = lines === 1 ? 16 : lines * 15;
   const goingUp = y2 < y1;
-  return { x: x1 + 8, y: goingUp ? y1 - lh - 6 : y1 + 6, w: lw, h: lh };
+
+  // Up-branch: label sits above the gateway top edge.
+  // Down-branch: label sits below the gateway bottom edge.
+  const labelY = goingUp ? src.y - lh - 4 : src.y + src.h + 4;
+  return { x: x1 + 8, y: labelY, w: lw, h: lh };
 }
 
 // ─── XML assembly ─────────────────────────────────────────────────────────────
@@ -280,9 +284,27 @@ export async function generateBpmnXml(process: BpmnProcess): Promise<string> {
     const type = ctx.shapeTypes.get(id) ?? 'task';
     const isGw = isGatewayType(type) || id.startsWith('Gateway_join_');
     const extra = isGw ? ' isMarkerVisible="true"' : '';
+
+    // For named gateways: explicit BPMNLabel above the diamond so the question
+    // text is readable instead of being crammed inside the 50×50 bounding box.
+    let labelXml = '';
+    if (isGw) {
+      const rawLabel = allElements.find(e => e.id === id)?.label ?? '';
+      if (rawLabel && !id.startsWith('Gateway_join_')) {
+        const lw = Math.min(Math.max(rawLabel.length * 7 + 12, 60), 180);
+        const lx = Math.round(b.x + b.w / 2 - lw / 2);
+        const ly = b.y - 22;
+        labelXml =
+          `\n        <bpmndi:BPMNLabel>\n` +
+          `          <dc:Bounds x="${lx}" y="${ly}" width="${lw}" height="18" />\n` +
+          `        </bpmndi:BPMNLabel>`;
+      }
+    }
+
     shapeLines.push(
       `      <bpmndi:BPMNShape id="${id}_di" bpmnElement="${id}"${extra}>\n` +
-      `        <dc:Bounds x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" />\n` +
+      `        <dc:Bounds x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" />` +
+      labelXml + '\n' +
       `      </bpmndi:BPMNShape>`
     );
   }

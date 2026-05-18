@@ -74,6 +74,7 @@ ${NAV_CSS}
   <a class="nav-link s0" href="#s2">§2 Journey Context</a>
   <a class="nav-link s0" href="#s3">§3 Reuse Search</a>
   <a class="nav-link s0" href="#s4">§4 Demand Profile</a>
+  <a class="nav-link s0" href="#s5">§5 As-Is Analysis</a>
   <a class="nav-link s0" href="#s6">§6 Data Inventory</a>
   <a class="nav-link s0" href="#s7">§7 Stakeholders</a>
   <div class="nav-section">Stage 1 — Design</div>
@@ -87,8 +88,12 @@ ${NAV_CSS}
   <a class="nav-link s2" href="#s14">§14 Module Register</a>
   <a class="nav-link s2" href="#s15">§15 Task Register</a>
   <a class="nav-link s2" href="#s16">§16 Loop Governance</a>
+  <a class="nav-link s2" href="#s17">§17 Exception Paths</a>
+  <a class="nav-link s2" href="#s18">§18 Capacity Assumptions</a>
+  <a class="nav-link s2" href="#s19">§19 Severity-Tier Rec.</a>
   <a class="nav-link s2" href="#s20">§20 Workflow / BPMN</a>
   <a class="nav-link s2" href="#s21">§21 Subflow Alignment</a>
+  <a class="nav-link s2" href="#s22">§22 Pattern Drift</a>
   <div class="nav-section">Stage 3 — Build</div>
   <a class="nav-link s3" href="#s23">§23 Build Handoff</a>
   <a class="nav-link s3" href="#s24">§24 KPI Inheritance</a>
@@ -120,13 +125,19 @@ ${NAV_CSS}
 <div id="s1" class="section">
   ${sectionHeader('1', 'Service Identification')}
   <div class="kv-grid">
-    <div class="k">Service Code</div><div class="v">${esc(si.serviceCode)}</div>
-    <div class="k">Name (EN)</div><div class="v">${esc(si.nameEn)}</div>
-    <div class="k">Name (AR)</div><div class="v" style="font-family:serif;direction:rtl;text-align:right">${esc(si.nameAr)}</div>
+    <div class="k">Service ID</div><div class="v">${esc(si.serviceCode)}</div>
+    <div class="k">Service Name</div><div class="v">${esc(si.nameEn)}</div>
+    <div class="k">Name (Arabic)</div><div class="v" style="font-family:serif;direction:rtl;text-align:right">${esc(si.nameAr)}</div>
+    <div class="k">Domain / Function</div><div class="v">${esc(si.domain) || '—'}</div>
     <div class="k">Category</div><div class="v">${esc(si.category)}</div>
     <div class="k">Owning Entity</div><div class="v">${esc(si.owningEntity)}</div>
+    <div class="k">Service Owner</div><div class="v">${esc(si.serviceOwner) || '—'}</div>
+    <div class="k">Service Sponsor</div><div class="v">${esc(si.serviceSponsor) || '—'}</div>
+    <div class="k">Customer Type</div><div class="v">${esc(si.customerType) || '—'}</div>
+    <div class="k">Service Purpose</div><div class="v">${esc(si.servicePurpose) || '—'}</div>
     <div class="k">Trigger</div><div class="v">${esc(si.trigger)}</div>
-    <div class="k">Outcome</div><div class="v">${esc(si.outcome)}</div>
+    <div class="k">Outcome (success)</div><div class="v">${esc(si.outcome)}</div>
+    <div class="k">Outcome (rejection)</div><div class="v">${esc(si.outcomeRejection) || '—'}</div>
   </div>
   <div style="margin-top:14px">
     <table><thead><tr><th>In Scope</th><th>Out of Scope</th></tr></thead>
@@ -139,44 +150,71 @@ ${NAV_CSS}
 
 <div id="s2" class="section">
   ${sectionHeader('2', 'Customer Journey Context')}
-  <div class="kv-grid">
-    <div class="k">Journey Phase</div><div class="v">${esc(manifest.stage0.customerJourneyContext.journeyPhase)}</div>
-    ${manifest.stage0.customerJourneyContext.precedingService ? `<div class="k">Preceding</div><div class="v">${esc(manifest.stage0.customerJourneyContext.precedingService)}</div>` : ''}
-    ${manifest.stage0.customerJourneyContext.followingService ? `<div class="k">Following</div><div class="v">${esc(manifest.stage0.customerJourneyContext.followingService)}</div>` : ''}
-  </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px">
-    <div><div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px">Touchpoints</div><ul>${manifest.stage0.customerJourneyContext.touchpoints.map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>
-    <div><div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px">Pain Points</div><ul>${manifest.stage0.customerJourneyContext.painPoints.map(p => `<li>${esc(p)}</li>`).join('')}</ul></div>
-  </div>
+  ${(() => { const jc = manifest.stage0.customerJourneyContext; return `
+  <table>
+    <thead><tr><th>Stage of Journey</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Trigger Event</strong></td><td>${esc(jc.triggerEvent) || esc(jc.journeyPhase) || '—'}</td></tr>
+      <tr><td><strong>Touchpoint Channel</strong></td><td>${esc(jc.touchpointChannel) || (jc.touchpoints.length ? jc.touchpoints.join(', ') : '—')}</td></tr>
+      <tr><td><strong>Customer Mindset</strong></td><td>${esc(jc.customerMindset) || '—'}</td></tr>
+      <tr><td><strong>Adjacent Services</strong></td><td>${esc(jc.adjacentServices) || [jc.precedingService, jc.followingService].filter(Boolean).join(' / ') || '—'}</td></tr>
+      <tr><td><strong>Customer Effort Score Target</strong></td><td>${esc(jc.customerEffortScore) || '—'}</td></tr>
+      <tr><td><strong>Journey Map Reference</strong></td><td>${esc(jc.journeyMapReference) || '—'}</td></tr>
+    </tbody>
+  </table>
+  ${jc.painPoints.length > 0 ? `<div style="margin-top:14px"><div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px">Pain Points</div><ul>${jc.painPoints.map((p: string) => `<li>${esc(p)}</li>`).join('')}</ul></div>` : ''}
+  `; })()}
 </div>
 
 <div id="s3" class="section">
   ${sectionHeader('3', 'Capability Reuse Search')}
-  <table><thead><tr><th>Search Term</th><th>Match?</th><th>Match Name</th><th>Decision</th><th>Rationale</th></tr></thead>
-  <tbody>${manifest.stage0.capabilityReuseSearch.map(r => `<tr><td>${esc(r.searchTerm)}</td><td>${r.matchFound ? '✓' : '✗'}</td><td>${esc(r.matchName)}</td><td><span class="badge ${r.decision === 'new' ? 'mat-candidate' : 'pass'}">${esc(r.decision)}</span></td><td>${esc(r.rationale)}</td></tr>`).join('')}</tbody></table>
+  <table><thead><tr><th>Search Term / Function Needed</th><th>Existing Capability Found</th><th>Decision (Consume/Fork/New)</th><th>Rationale</th></tr></thead>
+  <tbody>${manifest.stage0.capabilityReuseSearch.map(r => `<tr><td>${esc(r.searchTerm)}</td><td>${r.matchFound ? `✓ ${esc(r.matchName)}` : '✗ None'}</td><td><span class="badge ${r.decision === 'new' ? 'mat-candidate' : r.decision === 'consume' ? 'pass' : 'assisted'}">${esc(r.decision)}</span></td><td>${esc(r.rationale)}</td></tr>`).join('')}</tbody></table>
 </div>
 
 <div id="s4" class="section">
   ${sectionHeader('4', 'Demand & Capacity Profile')}
+  ${(() => { const dp = manifest.stage0.demandProfile; return `
   <div class="kv-grid">
-    <div class="k">Annual Volume</div><div class="v">${esc(manifest.stage0.demandProfile.annualVolume.toLocaleString())}</div>
-    <div class="k">Volume Basis</div><div class="v">${esc(manifest.stage0.demandProfile.volumeBasis)}</div>
-    <div class="k">Peak Periods</div><div class="v">${manifest.stage0.demandProfile.peakPeriods.map(p => `<span class="tag">${esc(p)}</span>`).join(' ')}</div>
-    <div class="k">Channels</div><div class="v"><div class="tag-list">${manifest.stage0.demandProfile.channels.map(c => `<span class="tag">${esc(c)}</span>`).join('')}</div></div>
-    <div class="k">Capacity</div><div class="v">${esc(manifest.stage0.demandProfile.capacityBaseline)}</div>
-  </div>
+    <div class="k">Annual Volume (estimate)</div><div class="v">${esc(dp.annualVolume.toLocaleString())} requests/year${dp.volumeBasis ? ` <span style="color:var(--muted);font-size:11px">(${esc(dp.volumeBasis)})</span>` : ''}</div>
+    <div class="k">Daily Average</div><div class="v">${esc(dp.dailyAverage) || '—'}</div>
+    <div class="k">Peak Day</div><div class="v">${esc(dp.peakDay) || '—'}</div>
+    <div class="k">Peak Period</div><div class="v">${dp.peakPeriods.map((p: string) => `<span class="tag">${esc(p)}</span>`).join(' ')}</div>
+    <div class="k">Channel Mix</div><div class="v">${esc(dp.channelMix) || dp.channels.map((c: string) => `<span class="tag">${esc(c)}</span>`).join(' ') || '—'}</div>
+    <div class="k">Customer Segments</div><div class="v">${esc(dp.customerSegments) || '—'}</div>
+    <div class="k">Capacity Constraints</div><div class="v">${esc(dp.capacityConstraints) || esc(dp.capacityBaseline) || '—'}</div>
+    <div class="k">Seasonality / Variability</div><div class="v">${esc(dp.seasonalityVariability) || '—'}</div>
+  </div>`; })()}
+</div>
+
+<div id="s5" class="section">
+  ${sectionHeader('5', 'As-Is Process Analysis')}
+  ${(() => {
+    const ap = manifest.stage0.asIsProcessAnalysis;
+    if (ap && ap.applicable === false) return `<div style="font-style:italic;color:var(--muted);padding:12px 0">✗ Not applicable — greenfield service</div>`;
+    return `<div class="kv-grid">
+    <div class="k">Current Process Owner</div><div class="v">${esc(ap?.currentProcessOwner) || '—'}</div>
+    <div class="k">Current Volume</div><div class="v">${esc(ap?.currentVolume) || '—'}</div>
+    <div class="k">Current Cycle Time</div><div class="v">${esc(ap?.currentCycleTime) || '—'}</div>
+    <div class="k">Current Pain Points</div><div class="v">${ap?.knownPainPoints && ap.knownPainPoints.length > 0 ? `<ul>${ap.knownPainPoints.map((p: string) => `<li>${esc(p)}</li>`).join('')}</ul>` : esc(ap?.currentStateDescription) || '—'}</div>
+    <div class="k">Current Tooling</div><div class="v">${esc(ap?.currentTooling) || '—'}</div>
+    <div class="k">Current SLA Performance</div><div class="v">${esc(ap?.currentSlaPerformance) || '—'}</div>
+    <div class="k">What Must Be Preserved</div><div class="v">${esc(ap?.whatMustBePreserved) || '—'}</div>
+    <div class="k">What Must Change</div><div class="v">${esc(ap?.whatMustChange) || esc(ap?.replacementRationale) || '—'}</div>
+  </div>`;
+  })()}
 </div>
 
 <div id="s6" class="section">
   ${sectionHeader('6', 'Data Inventory')}
-  <table><thead><tr><th>Data Element</th><th>C</th><th>R</th><th>U</th><th>D</th><th>Classification</th><th>Retention</th></tr></thead>
-  <tbody>${manifest.stage0.dataInventory.map(d => `<tr><td>${esc(d.dataElement)}</td><td style="text-align:center">${bool(d.creates)}</td><td style="text-align:center">${bool(d.reads)}</td><td style="text-align:center">${bool(d.updates)}</td><td style="text-align:center">${bool(d.deletes)}</td><td>${esc(d.classification)}</td><td style="font-family:monospace">${d.retentionDays != null ? esc(d.retentionDays) + 'd' : '—'}</td></tr>`).join('')}</tbody></table>
+  <table><thead><tr><th>Data Element</th><th>Action (C/R/U/D)</th><th>Source/Sink System</th><th>Sensitivity</th><th>Retention</th></tr></thead>
+  <tbody>${manifest.stage0.dataInventory.map(d => `<tr><td>${esc(d.dataElement)}</td><td style="font-family:monospace">${[d.creates?'C':'', d.reads?'R':'', d.updates?'U':'', d.deletes?'D':''].filter(Boolean).join('/')}</td><td>${esc(d.sourceSinkSystem) || '—'}</td><td>${esc(d.classification)}</td><td>${esc(d.retention) || (d.retentionDays ? d.retentionDays + ' days' : '—')}</td></tr>`).join('')}</tbody></table>
 </div>
 
 <div id="s7" class="section">
   ${sectionHeader('7', 'Stakeholder & Persona Map')}
-  <table><thead><tr><th>Role</th><th>Type</th><th>Responsibilities</th><th>Organization</th></tr></thead>
-  <tbody>${manifest.stage0.stakeholderMap.map(s => `<tr><td><strong>${esc(s.role)}</strong></td><td><span class="badge ${s.type === 'approver' ? 'pass' : 'mat-candidate'}">${esc(s.type)}</span></td><td><ul>${s.responsibilities.map(r => `<li>${esc(r)}</li>`).join('')}</ul></td><td>${esc(s.organization)}</td></tr>`).join('')}</tbody></table>
+  <table><thead><tr><th>Persona / Stakeholder</th><th>Role in This Service</th><th>Engagement Level</th><th>Decision Rights</th></tr></thead>
+  <tbody>${manifest.stage0.stakeholderMap.map(s => `<tr><td><strong>${esc(s.role)}</strong>${s.organization ? `<br><span style="font-size:11px;color:var(--muted)">${esc(s.organization)}</span>` : ''}</td><td><ul style="margin:0;padding-left:16px">${s.responsibilities.map((r: string) => `<li>${esc(r)}</li>`).join('')}</ul></td><td>${esc(s.engagementLevel) || `<span class="badge ${s.type === 'approver' ? 'pass' : s.type === 'escalation' ? 'risk-risk' : 'mat-candidate'}">${esc(s.type)}</span>`}</td><td>${esc(s.decisionRights) || '—'}</td></tr>`).join('')}</tbody></table>
 </div>
 
 <!-- ════════════════ STAGE 1 ════════════════ -->
@@ -184,21 +222,30 @@ ${NAV_CSS}
 
 <div id="s8" class="section">
   ${sectionHeader('8', 'Decomposition Decision')}
-  <div style="margin-bottom:16px">Archetype: <span class="badge arch-${dd.archetype === 'Capability' ? 'cap' : dd.archetype === 'Composite' ? 'comp' : 'orch'}" style="font-size:13px;padding:5px 14px">${esc(dd.archetype)}</span></div>
-  <table><thead><tr><th>Smell Test</th><th>Result</th><th>Notes</th></tr></thead>
+  <div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">§8.1 Archetype Declaration</div>
+  <table style="margin-bottom:16px"><thead><tr><th>Field</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Declared Archetype</td><td><span class="badge arch-${dd.archetype === 'Capability' ? 'cap' : dd.archetype === 'Composite' ? 'comp' : 'orch'}">${esc(dd.archetype)}</span></td></tr>
+    <tr><td>Decision Date</td><td>${esc(dd.decisionDate) || '—'}</td></tr>
+    <tr><td>Decision Made By</td><td>${esc(dd.decisionMadeBy) || '—'}</td></tr>
+    <tr><td>Rationale (1 paragraph)</td><td>${esc(dd.rationale)}</td></tr>
+  </tbody></table>
+  <div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">§8.2 Boundary Smell Tests</div>
+  <table><thead><tr><th>Test</th><th>Result</th><th>Notes</th></tr></thead>
   <tbody>${dd.smellTests.map(t => `<tr><td>${esc(t.test)}</td><td><span class="badge ${t.result}">${esc(t.result.toUpperCase())}</span></td><td>${esc(t.notes)}</td></tr>`).join('')}</tbody></table>
-  <div class="info-box" style="margin-top:12px">${esc(dd.rationale)}</div>
+  ${dd.calledServices.length > 0 ? `<div style="margin-top:10px"><div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px">Called Services</div><div class="tag-list">${dd.calledServices.map(s => `<span class="tag">${esc(s)}</span>`).join('')}</div></div>` : ''}
+  <div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:14px 0 8px">§8.3 Decision Log</div>
+  <table><thead><tr><th>Date</th><th>Decision</th><th>Reviewer</th></tr></thead>
+  <tbody>${dd.decisionLog.map(l => `<tr><td style="font-family:monospace">${esc(l.date)}</td><td>${esc(l.decision)}</td><td>${esc(l.reviewer)}</td></tr>`).join('')}</tbody></table>
 </div>
 
 <div id="s9" class="section">
   ${sectionHeader('9', 'Service Boundary & Interfaces')}
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-    <div><div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">Inputs</div>
-    <table><thead><tr><th>Name</th><th>Format</th><th>Source</th></tr></thead><tbody>${manifest.stage1.serviceBoundary.inputs.map(i => `<tr><td>${esc(i.name)}</td><td>${esc(i.format)}</td><td>${esc(i.source)}</td></tr>`).join('')}</tbody></table></div>
-    <div><div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">Outputs</div>
-    <table><thead><tr><th>Name</th><th>Format</th><th>Destination</th></tr></thead><tbody>${manifest.stage1.serviceBoundary.outputs.map(o => `<tr><td>${esc(o.name)}</td><td>${esc(o.format)}</td><td>${esc(o.destination)}</td></tr>`).join('')}</tbody></table></div>
-  </div>
-  ${manifest.stage1.serviceBoundary.calledServices.length > 0 ? `<div style="margin-top:14px"><table><thead><tr><th>Called Service</th><th>Cascade</th><th>OLA</th></tr></thead><tbody>${manifest.stage1.serviceBoundary.calledServices.map(s => `<tr><td>${esc(s.service)}</td><td>${esc(s.cascadePattern)}</td><td style="font-family:monospace">${esc(s.ola)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+  <div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">§9.1 Inputs</div>
+  <table style="margin-bottom:16px"><thead><tr><th>Name</th><th>Format</th><th>Source</th></tr></thead><tbody>${manifest.stage1.serviceBoundary.inputs.map(i => `<tr><td>${esc(i.name)}</td><td>${esc(i.format)}</td><td>${esc(i.source)}</td></tr>`).join('')}</tbody></table>
+  <div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">§9.2 Outputs</div>
+  <table style="margin-bottom:16px"><thead><tr><th>Name</th><th>Format</th><th>Destination</th></tr></thead><tbody>${manifest.stage1.serviceBoundary.outputs.map(o => `<tr><td>${esc(o.name)}</td><td>${esc(o.format)}</td><td>${esc(o.destination)}</td></tr>`).join('')}</tbody></table>
+  ${manifest.stage1.serviceBoundary.calledServices.length > 0 ? `<div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">§9.3 Called Services (Composite/Orchestrating)</div><table><thead><tr><th>Called Service</th><th>Cascade Pattern</th><th>OLA</th></tr></thead><tbody>${manifest.stage1.serviceBoundary.calledServices.map(s => `<tr><td>${esc(s.service)}</td><td>${esc(s.cascadePattern)}</td><td style="font-family:monospace">${esc(s.ola)}</td></tr>`).join('')}</tbody></table>` : ''}
 </div>
 
 <div id="s10" class="section">
@@ -214,7 +261,9 @@ ${NAV_CSS}
     <div class="info-box" style="text-align:center"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:4px">Computed SLA</div><div style="font-size:26px;font-weight:700;color:var(--navy)">${esc(ot.computedSlaDays)} <span style="font-size:13px;font-weight:400">days</span></div></div>
     <div class="info-box" style="text-align:center;border-left-color:${ot.variance === 0 ? 'var(--s0)' : 'var(--s2)'}"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:4px">Variance</div><div style="font-size:26px;font-weight:700;color:${ot.variance === 0 ? 'var(--s0)' : 'var(--s2)'}">${ot.variance >= 0 ? '+' : ''}${esc(ot.variance)} <span style="font-size:13px;font-weight:400">days</span></div></div>
   </div>
-  <table><thead><tr><th>OLA Component</th><th>Days</th><th>Mode</th></tr></thead>
+  ${ot.varianceJustification ? `<div class="info-box" style="margin-bottom:14px"><strong>Variance Justification:</strong> ${esc(ot.varianceJustification)}</div>` : ''}
+  <div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">§11.2 SLA Cascade Arithmetic</div>
+  <table><thead><tr><th>OLA Component</th><th>OLA (days)</th><th>Execution Mode</th></tr></thead>
   <tbody>${ot.olaBreakdown.map(o => `<tr><td>${esc(o.service)}</td><td style="font-family:monospace;font-weight:600">${esc(o.olaDays)}</td><td><span class="badge ${o.executionMode === 'Parallel' ? 'pass' : 'mat-candidate'}">${esc(o.executionMode)}</span></td></tr>`).join('')}<tr style="font-weight:700;background:var(--paper-2)"><td>Total</td><td style="font-family:monospace">${esc(ot.computedSlaDays)}</td><td>—</td></tr></tbody></table>
 </div>
 
@@ -243,15 +292,46 @@ ${NAV_CSS}
 
 <div id="s15" class="section">
   ${sectionHeader('15', 'Task Register')}
-  <table><thead><tr><th>ID</th><th>Module</th><th>Task</th><th>Mode</th><th>OLA</th><th>Capacity</th><th>Exception Path</th><th>Auto?</th></tr></thead>
-  <tbody>${manifest.stage2.taskRegister.map(t => `<tr><td style="font-family:monospace;font-weight:600;color:var(--navy)">${esc(t.taskId)}</td><td style="font-family:monospace;font-size:11px;color:var(--muted)">${esc(t.moduleId)}</td><td><strong>${esc(t.name)}</strong><br><span style="font-size:11px;color:var(--muted)">${esc(t.description)}</span></td><td>${digitizationBadge(t.digitizationMode)}</td><td style="font-family:monospace">${esc(t.olaCompact)}</td><td style="font-size:11px">${esc(t.capacityAssumption)}</td><td style="font-size:11px">${esc(t.exceptionPath)}</td><td style="text-align:center">${bool(t.automationCandidate)}</td></tr>`).join('')}</tbody></table>
+  <table><thead><tr><th>ID</th><th>Module</th><th>Task</th><th>Type</th><th>Mode</th><th>OLA</th><th>Lane</th><th>Capacity</th><th>Exception Path</th><th>Auto?</th></tr></thead>
+  <tbody>${manifest.stage2.taskRegister.map(t => `<tr><td style="font-family:monospace;font-weight:600;color:var(--navy)">${esc(t.taskId)}</td><td style="font-family:monospace;font-size:11px;color:var(--muted)">${esc(t.moduleId)}</td><td><strong>${esc(t.name)}</strong><br><span style="font-size:11px;color:var(--muted)">${esc(t.description)}</span></td><td style="font-family:monospace;font-size:11px">${esc(t.taskTypeCode)}</td><td>${digitizationBadge(t.digitizationMode)}</td><td style="font-family:monospace">${esc(t.olaCompact)}</td><td style="font-size:11px;color:var(--muted)">${esc(t.lane)}</td><td style="font-size:11px">${esc(t.capacityAssumption)}</td><td style="font-size:11px">${esc(t.exceptionPath)}</td><td style="text-align:center">${bool(t.automationCandidate)}</td></tr>`).join('')}</tbody></table>
 </div>
 
 ${manifest.stage2.loopGovernance.length > 0 ? `
 <div id="s16" class="section">
   ${sectionHeader('16', 'Loop Governance')}
-  <table><thead><tr><th>Loop ID</th><th>Type</th><th>Re-entry</th><th>Max Cycles</th><th>Timeout</th><th>Clock</th><th>Escalation</th></tr></thead>
-  <tbody>${manifest.stage2.loopGovernance.map(l => `<tr><td style="font-family:monospace;font-weight:600;color:var(--navy)">${esc(l.loopId)}</td><td>${esc(l.type)}</td><td style="font-family:monospace">${esc(l.reentryTaskId)}</td><td style="text-align:center;font-weight:700">${esc(l.maxCycles)}</td><td>${esc(l.timeout)}</td><td><span class="badge mat-candidate">${esc(l.clockPolicy)}</span></td><td>${esc(l.escalationPath)}</td></tr>`).join('')}</tbody></table>
+  <table><thead><tr><th>Loop ID</th><th>Type</th><th>Re-entry</th><th>Max Cycles</th><th>Timeout</th><th>Clock</th><th>Escalation</th><th>Reason Codes</th></tr></thead>
+  <tbody>${manifest.stage2.loopGovernance.map(l => `<tr><td style="font-family:monospace;font-weight:600;color:var(--navy)">${esc(l.loopId)}</td><td>${esc(l.type)}</td><td style="font-family:monospace">${esc(l.reentryTaskId)}</td><td style="text-align:center;font-weight:700">${esc(l.maxCycles)}</td><td>${esc(l.timeout)}</td><td><span class="badge mat-candidate">${esc(l.clockPolicy)}</span></td><td>${esc(l.escalationPath)}</td><td style="font-size:11px">${l.reasonCodes && l.reasonCodes.length > 0 ? l.reasonCodes.map((rc: string) => `<span class="tag">${esc(rc)}</span>`).join(' ') : '—'}</td></tr>`).join('')}</tbody></table>
+</div>` : ''}
+
+<div id="s17" class="section">
+  ${sectionHeader('17', 'Exception Pathways')}
+  <table><thead><tr><th>Task ID</th><th>Task Name</th><th>Exception Path</th></tr></thead>
+  <tbody>${manifest.stage2.taskRegister.map(t => `<tr><td style="font-family:monospace;font-weight:600;color:var(--navy)">${esc(t.taskId)}</td><td>${esc(t.name)}</td><td style="font-size:11px">${esc(t.exceptionPath) || '—'}</td></tr>`).join('')}</tbody></table>
+</div>
+
+<div id="s18" class="section">
+  ${sectionHeader('18', 'Capacity Assumptions')}
+  <table><thead><tr><th>Task ID</th><th>Task Name</th><th>OLA Compact</th><th>Capacity Assumption</th></tr></thead>
+  <tbody>${manifest.stage2.taskRegister.map(t => `<tr><td style="font-family:monospace;font-weight:600;color:var(--navy)">${esc(t.taskId)}</td><td>${esc(t.name)}</td><td style="font-family:monospace">${esc(t.olaCompact)}</td><td style="font-size:11px">${esc(t.capacityAssumption) || '—'}</td></tr>`).join('')}</tbody></table>
+</div>
+
+${manifest.stage2.severityTierReconciliation && manifest.stage2.severityTierReconciliation.length > 0 ? `
+<div id="s19" class="section">
+  ${sectionHeader('19', 'Severity-Tier Reconciliation')}
+  ${manifest.stage2.severityTierReconciliation.map(tier => `
+  <div style="margin-bottom:20px;border:1px solid var(--rule);border-radius:4px;overflow:hidden">
+    <div style="background:var(--paper-2);padding:10px 14px;font-weight:600;font-size:13px;border-bottom:1px solid var(--rule)">${esc(tier.tier)}</div>
+    <div style="padding:12px 14px">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px">
+        <div class="info-box" style="text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:2px">Stated SLA</div><div style="font-size:18px;font-weight:700;color:var(--navy)">${esc(tier.statedSlaDays)}d</div></div>
+        <div class="info-box" style="text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:2px">Computed SLA</div><div style="font-size:18px;font-weight:700;color:var(--navy)">${esc(tier.computedSlaDays)}d</div></div>
+        <div class="info-box" style="text-align:center;border-left-color:${tier.variance === 0 ? 'var(--s0)' : 'var(--s2)'}"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:2px">Variance</div><div style="font-size:18px;font-weight:700;color:${tier.variance === 0 ? 'var(--s0)' : 'var(--s2)'}">${tier.variance >= 0 ? '+' : ''}${esc(tier.variance)}d</div></div>
+        <div class="info-box"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:2px">Justification</div><div style="font-size:11px">${esc(tier.varianceJustification) || '—'}</div></div>
+      </div>
+      <table><thead><tr><th>OLA Component</th><th>Days</th><th>Mode</th></tr></thead>
+      <tbody>${tier.olaBreakdown.map(o => `<tr><td>${esc(o.service)}</td><td style="font-family:monospace;font-weight:600">${esc(o.olaDays)}</td><td><span class="badge ${o.executionMode === 'Parallel' ? 'pass' : 'mat-candidate'}">${esc(o.executionMode)}</span></td></tr>`).join('')}</tbody></table>
+    </div>
+  </div>`).join('')}
 </div>` : ''}
 
 <div id="s20" class="section page-break">
@@ -271,27 +351,34 @@ ${manifest.stage2.loopGovernance.length > 0 ? `
   <tbody>${manifest.stage2.subflowAlignment.map(s => `<tr><td style="font-family:monospace;font-weight:600;color:var(--navy)">${esc(s.moduleId)}</td><td>${esc(s.pattern)}</td><td style="font-family:monospace">${esc(s.wcpCode)}</td><td>${esc(s.deviation) || '<span style="color:var(--muted)">None</span>'}</td></tr>`).join('')}</tbody></table>
 </div>
 
+${manifest.stage2.patternDriftNotes && manifest.stage2.patternDriftNotes.length > 0 ? `
+<div id="s22" class="section">
+  ${sectionHeader('22', 'Pattern Drift Notes')}
+  <table><thead><tr><th>Module ID</th><th>Standard Pattern</th><th>Deviation</th><th>Justification</th><th>Library Update?</th></tr></thead>
+  <tbody>${manifest.stage2.patternDriftNotes.map(n => `<tr><td style="font-family:monospace;font-weight:600;color:var(--navy)">${esc(n.moduleId)}</td><td>${esc(n.standardPattern)}</td><td style="font-size:11px">${esc(n.deviation)}</td><td style="font-size:11px">${esc(n.justification)}</td><td style="text-align:center">${n.libraryUpdateRecommended ? '<span class="badge pass">Yes</span>' : '<span class="badge mat-deprecated">No</span>'}</td></tr>`).join('')}</tbody></table>
+</div>` : ''}
+
 <!-- ════════════════ STAGE 3 ════════════════ -->
 <div class="stage-divider s3">▸ Stage 3 — Build-Ready Requirements · §23–27</div>
 
 <div id="s23" class="section">
   ${sectionHeader('23', 'Build-Ready Handoff')}
   <div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">§23.1 Data Contracts</div>
-  ${bh.dataContracts.map(dc => `<div style="margin-bottom:14px;padding:14px;border:1px solid var(--rule);border-radius:4px"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><strong>${esc(dc.name)}</strong><span class="badge ${dc.direction === 'Inbound' ? 'pass' : 'manual'}">${esc(dc.direction)}</span></div><div class="kv-grid"><div class="k">Schema</div><div class="v" style="font-family:monospace;font-size:11px;white-space:pre-wrap">${esc(dc.schemaDescription)}</div><div class="k">Mandatory</div><div class="v"><div class="tag-list">${dc.mandatoryFields.map(f => `<span class="tag">${esc(f)}</span>`).join('')}</div></div><div class="k">Optional</div><div class="v"><div class="tag-list">${dc.optionalFields.map(f => `<span class="tag" style="opacity:.7">${esc(f)}</span>`).join('')}</div></div></div></div>`).join('')}
+  ${bh.dataContracts.map(dc => `<div style="margin-bottom:14px;padding:14px;border:1px solid var(--rule);border-radius:4px"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><strong>${esc(dc.name)}</strong><span class="badge ${dc.direction === 'Inbound' ? 'pass' : 'manual'}">${esc(dc.direction)}</span></div><div class="kv-grid"><div class="k">Schema</div><div class="v" style="font-family:monospace;font-size:11px;white-space:pre-wrap">${esc(dc.schemaDescription)}</div><div class="k">Mandatory</div><div class="v"><div class="tag-list">${dc.mandatoryFields.map(f => `<span class="tag">${esc(f)}</span>`).join('')}</div></div><div class="k">Optional</div><div class="v"><div class="tag-list">${dc.optionalFields.map(f => `<span class="tag" style="opacity:.7">${esc(f)}</span>`).join('')}</div></div><div class="k">Versioning</div><div class="v">${esc(dc.versioningStrategy)}</div>${dc.schemaReference ? `<div class="k">Schema Reference</div><div class="v" style="font-family:monospace;font-size:11px">${esc(dc.schemaReference)}</div>` : ''}${dc.notes ? `<div class="k">Notes</div><div class="v" style="font-size:11px">${esc(dc.notes)}</div>` : ''}</div></div>`).join('')}
 
   <div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:18px 0 8px">§23.2 Integration Points</div>
-  <table><thead><tr><th>System</th><th>Direction</th><th>Protocol</th><th>Auth</th><th>Fallback</th></tr></thead>
-  <tbody>${bh.integrationPoints.map(ip => `<tr><td><strong>${esc(ip.system)}</strong></td><td><span class="badge ${ip.direction === 'Inbound' ? 'pass' : 'manual'}">${esc(ip.direction)}</span></td><td style="font-family:monospace">${esc(ip.protocol)}</td><td style="font-family:monospace;font-size:11px">${esc(ip.authentication)}</td><td style="font-size:11px">${esc(ip.fallbackBehavior)}</td></tr>`).join('')}</tbody></table>
+  <table><thead><tr><th>External System</th><th>Direction</th><th>Protocol</th><th>Frequency</th><th>Authentication</th><th>Fallback Behaviour</th><th>Rate Limits</th><th>SLA Dependency</th></tr></thead>
+  <tbody>${bh.integrationPoints.map(ip => `<tr><td><strong>${esc(ip.system)}</strong></td><td><span class="badge ${ip.direction === 'Inbound' ? 'pass' : ip.direction === 'Outbound' ? 'manual' : 'assisted'}">${esc(ip.direction)}</span></td><td style="font-family:monospace">${esc(ip.protocol)}</td><td>${esc(ip.frequency)}</td><td style="font-family:monospace;font-size:11px">${esc(ip.authentication)}</td><td style="font-size:11px">${esc(ip.fallbackBehavior)}</td><td style="font-size:11px">${esc(ip.rateLimits)}</td><td style="font-size:11px">${esc(ip.slaDependency)}</td></tr>`).join('')}</tbody></table>
 
-  <div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:18px 0 8px">§23.3 Automation Candidates</div>
-  <table><thead><tr><th>Task ID</th><th>Mode</th><th>Approach</th><th>Phase</th></tr></thead>
-  <tbody>${bh.automationCandidates.map(ac => `<tr><td style="font-family:monospace;font-weight:600">${esc(ac.taskId)}</td><td>${esc(ac.automationMode)}</td><td>${esc(ac.buildApproach)}</td><td><span class="badge ${ac.phase === 'Phase 1' ? 'pass' : 'mat-candidate'}">${esc(ac.phase)}</span></td></tr>`).join('')}</tbody></table>
+  <div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:18px 0 8px">§23.3 Automation Candidates (Confirmed)</div>
+  <table><thead><tr><th>Task ID</th><th>Mode</th><th>Approach</th><th>Prerequisites</th><th>Phase</th><th>Estimated Effort</th></tr></thead>
+  <tbody>${bh.automationCandidates.map(ac => `<tr><td style="font-family:monospace;font-weight:600">${esc(ac.taskId)}</td><td>${esc(ac.automationMode)}</td><td>${esc(ac.buildApproach)}</td><td><ul style="margin:0;padding-left:14px">${ac.prerequisites.map(p => `<li style="font-size:11px">${esc(p)}</li>`).join('')}</ul></td><td><span class="badge ${ac.phase === 'Phase 1' ? 'pass' : 'mat-candidate'}">${esc(ac.phase)}</span></td><td style="font-size:11px">${esc(ac.estimatedEffort)}</td></tr>`).join('')}</tbody></table>
 </div>
 
 <div id="s24" class="section">
   ${sectionHeader('24', 'KPI Inheritance')}
-  <table><thead><tr><th>KPI</th><th>Definition</th><th>Source Tasks</th><th>Parent KPI</th><th>Frequency</th><th>Target</th></tr></thead>
-  <tbody>${manifest.stage3.kpiInheritance.map(k => `<tr><td><strong>${esc(k.name)}</strong></td><td style="font-size:11px">${esc(k.definition)}</td><td><div class="tag-list">${k.sourceTasks.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div></td><td style="font-size:11px">${esc(k.parentKpi)}</td><td><span class="badge mat-candidate">${esc(k.frequency)}</span></td><td style="font-weight:600;color:var(--navy)">${esc(k.target)}</td></tr>`).join('')}</tbody></table>
+  <table><thead><tr><th>KPI Name</th><th>Definition</th><th>Source Tasks</th><th>Parent KPI</th><th>Child KPI</th><th>Frequency</th><th>Baseline</th><th>Target</th></tr></thead>
+  <tbody>${manifest.stage3.kpiInheritance.map(k => `<tr><td><strong>${esc(k.name)}</strong></td><td style="font-size:11px">${esc(k.definition)}</td><td><div class="tag-list">${k.sourceTasks.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div></td><td style="font-size:11px">${esc(k.parentKpi)}</td><td style="font-size:11px">${esc(k.childKpi)}</td><td><span class="badge mat-candidate">${esc(k.frequency)}</span></td><td style="font-size:11px">${esc(k.baseline)}</td><td style="font-weight:600;color:var(--navy)">${esc(k.target)}</td></tr>`).join('')}</tbody></table>
 </div>
 
 <div id="s25" class="section">
@@ -299,7 +386,7 @@ ${manifest.stage2.loopGovernance.length > 0 ? `
   <div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">§25.1 RACI</div>
   <table><thead><tr><th>Activity</th><th>R</th><th>A</th><th>C</th><th>I</th></tr></thead>
   <tbody>${manifest.stage3.operatingModel.raci.map(r => `<tr><td><strong>${esc(r.activity)}</strong></td><td>${esc(r.responsible)}</td><td>${esc(r.accountable)}</td><td>${esc(r.consulted)}</td><td>${esc(r.informed)}</td></tr>`).join('')}</tbody></table>
-  <div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:16px 0 8px">§25.2 Cadence</div>
+  <div style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:16px 0 8px">§25.2 Governance Cadence</div>
   <table><thead><tr><th>Forum</th><th>Frequency</th><th>Attendees</th><th>Purpose</th></tr></thead>
   <tbody>${manifest.stage3.operatingModel.cadence.map(c => `<tr><td><strong>${esc(c.forum)}</strong></td><td><span class="badge mat-candidate">${esc(c.frequency)}</span></td><td>${esc(c.attendees)}</td><td>${esc(c.purpose)}</td></tr>`).join('')}</tbody></table>
 </div>
