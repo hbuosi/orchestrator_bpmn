@@ -307,6 +307,106 @@ const COMPACT_HINTS =
 // Used when the model cannot produce a structurally valid BPMN after all retries.
 // Builds a simple linear (no gateways) diagram so the stage succeeds rather than failing.
 
+// ─── Programmatic diagram builder ────────────────────────────────────────────
+// Derives workflowDiagram directly from taskRegister + moduleRegister so the
+// diagram ALWAYS reflects the actual service data, not AI imagination.
+
+type TaskReg = {
+  taskId: string; name: string; olaCompact?: string;
+  digitizationMode: string; lane?: string; moduleId: string;
+};
+
+function buildDiagramFromRegisters(
+  tasks: TaskReg[],
+  modules: Array<{ moduleId: string; name: string }>,
+  processId: string,
+  processName: string,
+  archetype?: string,
+): object {
+  // Participants: derive from lane field in task order (first-seen = first lane)
+  const seenLanes = new Set<string>();
+  const rawLanes: string[] = [];
+  for (const t of tasks) {
+    const lane = t.lane?.trim();
+    if (lane && !seenLanes.has(lane)) { seenLanes.add(lane); rawLanes.push(lane); }
+  }
+  let participants = rawLanes.map((name, i) => ({ id: `lane${i + 1}`, name: name.slice(0, 18) }));
+
+  // Capability: Lane 1 must be "Caller Service"
+  if (archetype === 'Capability') {
+    if (participants.length > 0) participants[0] = { id: 'lane1', name: 'Caller Service' };
+    else participants = [{ id: 'lane1', name: 'Caller Service' }];
+  }
+  // Rule 3: ensure System is at position 2
+  const sysIdx = participants.findIndex(p => /system/i.test(p.name));
+  if (sysIdx > 1) { const [sys] = participants.splice(sysIdx, 1); participants.splice(1, 0, sys); }
+
+  // Sort tasks: module register order → original register order within module
+  const moduleOrder = modules.map(m => m.moduleId);
+  const sorted = [...tasks].sort((a, b) => {
+    const ai = moduleOrder.indexOf(a.moduleId); const bi = moduleOrder.indexOf(b.moduleId);
+    if (ai !== bi) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    return tasks.indexOf(a) - tasks.indexOf(b);
+  });
+
+  // Build elements
+  const elements: object[] = [];
+  const startLabel = archetype === 'Capability' ? 'Start (Service Call In)' : 'Start';
+  elements.push({ type: 'startEvent', id: 'start_1', label: startLabel, colorKey: 'happy' });
+
+  for (const task of sorted.slice(0, 15)) {
+    const isAuto = task.digitizationMode === 'automated';
+    const ola = task.olaCompact ? ` [${task.olaCompact}]` : '';
+    const maxName = 30 - ola.length;
+    const name = task.name.length > maxName ? task.name.slice(0, maxName - 1) + '…' : task.name;
+    elements.push({
+      type: isAuto ? 'serviceTask' : 'userTask',
+      id: task.taskId,
+      label: (name + ola).slice(0, 30),
+      colorKey: isAuto ? 'system' : 'manual',
+    });
+  }
+
+  const endLabel = archetype === 'Capability'
+    ? `End — ${(modules[0]?.name ?? 'Service').slice(0, 18)} Complete`.slice(0, 30)
+    : 'End — Completed';
+  elements.push({ type: 'endEvent', id: 'end_1', label: endLabel, colorKey: 'happy_end' });
+
+  return {
+    id: processId || 'Process_1',
+    name: processName || 'Service Workflow',
+    ...(participants.length > 0 ? { participants } : {}),
+    elements,
+  };
+}
+
+// After Stage 2 data is validated by Zod, replace AI-generated workflowDiagram
+// (which often mismatches the register) with a deterministic one.
+// Also auto-builds workflowVariants when tiers exist but AI omitted them.
+function deriveStage2Diagrams(s2: Stage2, archetype?: string): Stage2 {
+  const diagram = buildDiagramFromRegisters(
+    s2.taskRegister, s2.moduleRegister,
+    s2.workflowDiagram.id, s2.workflowDiagram.name,
+    archetype,
+  );
+
+  let variants = s2.workflowVariants;
+  if (!variants?.length && (s2.severityTierReconciliation?.length ?? 0) > 1) {
+    variants = s2.severityTierReconciliation!.map(tier => ({
+      tier: tier.tier,
+      diagram: buildDiagramFromRegisters(
+        s2.taskRegister, s2.moduleRegister,
+        `Process_${tier.tier.replace(/[^a-zA-Z0-9]/g, '_')}`,
+        `${s2.workflowDiagram.name} — ${tier.tier}`,
+        archetype,
+      ),
+    })) as Stage2['workflowVariants'];
+  }
+
+  return Stage2Schema.parse({ ...s2, workflowDiagram: diagram, workflowVariants: variants });
+}
+
+// Kept for structural-failure fallback only (BPMN validation errors on last retry)
 function buildFallbackWorkflowDiagram(
   tasks: Array<{ taskId: string; name: string; digitizationMode: string }>,
   processId: string,
@@ -608,10 +708,15 @@ async function generateManifestWithRetry(
       const qualityHardFails = getHardFailErrors(qualityResults);
       if (qualityHardFails.length > 0) {
         lastError = `Diagram quality rule violations:\n${qualityHardFails.map((e, i) => `${i + 1}. ${e}`).join('\n')}`;
-        if (attempt === MAX_RETRIES) return validated; // accept with violations on last attempt
+        if (attempt === MAX_RETRIES) {
+          const derived = { ...validated, stage2: deriveStage2Diagrams(validated.stage2) };
+          return ServiceManifestSchema.parse(derived);
+        }
         continue;
       }
-      return validated;
+      // Always derive diagram from registers before returning
+      const derivedManifest = { ...validated, stage2: deriveStage2Diagrams(validated.stage2) };
+      return ServiceManifestSchema.parse(derivedManifest);
     } catch (err) {
       // Manifest BPMN errors are handled with fallback above — no rethrow needed
       lastError = err instanceof Error ? err.message : String(err);
@@ -893,9 +998,19 @@ async function generateStageWithRetry<T>(
         const qualityHardFails = getHardFailErrors(qualityResults);
         if (qualityHardFails.length > 0) {
           lastError = `Diagram quality rule violations:\n${qualityHardFails.map((e, i) => `${i + 1}. ${e}`).join('\n')}`;
-          if (attempt === MAX_RETRIES) return validated as T; // accept with violations on last attempt
+          if (attempt === MAX_RETRIES) {
+            return Stage2Schema.parse(deriveStage2Diagrams(
+              validated as unknown as Stage2,
+              previousStages.stage1?.decompositionDecision?.archetype,
+            )) as T;
+          }
           continue;
         }
+        // Always derive diagram from registers before returning
+        return Stage2Schema.parse(deriveStage2Diagrams(
+          validated as unknown as Stage2,
+          previousStages.stage1?.decompositionDecision?.archetype,
+        )) as T;
       }
       return validated;
     } catch (err) {
