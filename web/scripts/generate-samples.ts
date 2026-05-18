@@ -11,6 +11,53 @@ import { generateBpmnXml } from '../lib/generators/bpmn-xml.generator';
 import { applyColors } from '../lib/generators/bpmn-colors';
 import type { Stage1, Stage2, Stage3 } from '../lib/schemas/manifest.schema';
 
+// ── Same logic as route.ts buildDiagramFromRegisters ─────────────────────────
+type TaskReg = { taskId: string; name: string; olaCompact?: string; digitizationMode: string; lane?: string; moduleId: string };
+function buildDiagramFromRegisters(
+  tasks: TaskReg[],
+  modules: Array<{ moduleId: string; name: string }>,
+  processId: string,
+  processName: string,
+  archetype?: string,
+): object {
+  const seenLanes = new Set<string>();
+  const rawLanes: string[] = [];
+  for (const t of tasks) {
+    const lane = t.lane?.trim();
+    if (lane && !seenLanes.has(lane)) { seenLanes.add(lane); rawLanes.push(lane); }
+  }
+  let participants = rawLanes.map((name, i) => ({ id: `lane${i + 1}`, name: name.slice(0, 18) }));
+  if (archetype === 'Capability') {
+    if (participants.length > 0) participants[0] = { id: 'lane1', name: 'Caller Service' };
+    else participants = [{ id: 'lane1', name: 'Caller Service' }];
+  }
+  const sysIdx = participants.findIndex(p => /system/i.test(p.name));
+  if (sysIdx > 1) { const [s] = participants.splice(sysIdx, 1); participants.splice(1, 0, s); }
+
+  const moduleOrder = modules.map(m => m.moduleId);
+  const sorted = [...tasks].sort((a, b) => {
+    const ai = moduleOrder.indexOf(a.moduleId), bi = moduleOrder.indexOf(b.moduleId);
+    if (ai !== bi) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    return tasks.indexOf(a) - tasks.indexOf(b);
+  });
+
+  const elements: object[] = [];
+  const startLabel = archetype === 'Capability' ? 'Start (Service Call In)' : 'Start';
+  elements.push({ type: 'startEvent', id: 'start_1', label: startLabel, colorKey: 'happy' });
+  for (const task of sorted.slice(0, 15)) {
+    const isAuto = task.digitizationMode === 'automated';
+    const ola = task.olaCompact ? ` [${task.olaCompact}]` : '';
+    const maxName = 30 - ola.length;
+    const name = task.name.length > maxName ? task.name.slice(0, maxName - 1) + '…' : task.name;
+    elements.push({ type: isAuto ? 'serviceTask' : 'userTask', id: task.taskId, label: (name + ola).slice(0, 30), colorKey: isAuto ? 'system' : 'manual' });
+  }
+  const endLabel = archetype === 'Capability'
+    ? `End — ${(modules[0]?.name ?? 'Service').slice(0, 18)} Complete`.slice(0, 30)
+    : 'End — Completed';
+  elements.push({ type: 'endEvent', id: 'end_1', label: endLabel, colorKey: 'happy_end' });
+  return { id: processId, name: processName, ...(participants.length > 0 ? { participants } : {}), elements };
+}
+
 // ─── Sample Stage 1 ──────────────────────────────────────────────────────────
 
 const stage1: Stage1 = {
@@ -87,176 +134,63 @@ const stage1: Stage1 = {
 };
 
 // ─── Sample Stage 2 ──────────────────────────────────────────────────────────
+// Registers defined first so buildDiagramFromRegisters can reference them
+
+const s2Modules = [
+  { moduleId: 'M-INT-01', name: 'Incident Intake',             description: 'Receives, validates, and acknowledges incident reports from all channels', ola: '30 minutes', alignedSubflow: 'SF-INT-001 Standard Intake Pattern',             subflowMaturity: 'Ratified'   as const },
+  { moduleId: 'M-TRI-01', name: 'Triage & Classification',     description: 'Analyst performs initial assessment and classifies severity tier',            ola: '45 minutes', alignedSubflow: 'SF-TRI-001 Severity Classification Pattern', subflowMaturity: 'Stable'     as const },
+  { moduleId: 'M-ESC-01', name: 'Escalation Gate',             description: 'Cyber Lead reviews classification; declares Critical or returns for re-triage', ola: '30 minutes', alignedSubflow: 'SF-APR-002 Approval Gate Pattern',           subflowMaturity: 'Ratified'   as const },
+  { moduleId: 'M-INV-01', name: 'Investigation & Containment', description: 'Evidence collection, root cause analysis, and threat containment',             ola: '6 hours',    alignedSubflow: 'SF-INV-001 Investigation Pattern',             subflowMaturity: 'Provisional' as const },
+  { moduleId: 'M-REC-01', name: 'Recovery & Closure',          description: 'System recovery, case documentation, closure notification, and CSAT',          ola: '4 hours',    alignedSubflow: 'SF-CLO-001 Case Closure Pattern',              subflowMaturity: 'Stable'     as const },
+  { moduleId: 'M-PIR-01', name: 'Post-Incident Review',        description: 'PIR within 10 business days; KB update and lessons-learned publication',       ola: '8 hours',    alignedSubflow: 'SF-PIR-001 PIR Pattern',                       subflowMaturity: 'Candidate'  as const },
+];
+
+const s2Tasks = [
+  { taskId: 'T01', moduleId: 'M-INT-01', name: 'Submit Incident Report',      description: 'Reporter submits incident via security portal, service desk, or SIEM auto-alert',                                                                      taskTypeCode: 'BT-INT',  digitizationMode: 'automated' as const, olaFull: '1 Minute',               olaCompact: '1m',  capacityAssumption: '≤150 incidents/year (avg 3/week)',                              exceptionPath: 'If portal unavailable: auto-failover to service desk; SIEM alerts always routed directly',           automationCandidate: true,  lane: 'Reporter' },
+  { taskId: 'T02', moduleId: 'M-INT-01', name: 'Acknowledge & Log (M1)',       description: 'System auto-acknowledges receipt within 15 min, creates ITSM ticket, starts SLA clock',                                                                  taskTypeCode: 'BT-INT',  digitizationMode: 'automated' as const, olaFull: '15 Minutes',             olaCompact: '15m', capacityAssumption: '≤150 incidents/year',                                           exceptionPath: 'If ITSM unavailable: log to backup register; alert on-call engineer; SLA clock still starts',       automationCandidate: false, lane: 'System' },
+  { taskId: 'T03', moduleId: 'M-TRI-01', name: 'Perform Initial Triage',       description: 'Analyst reviews incident details, collects initial data, assesses severity using classification matrix',                                                  taskTypeCode: 'BT-TRI',  digitizationMode: 'assisted'  as const, olaFull: '45 Minutes',             olaCompact: '45m', capacityAssumption: '≤150 incidents/year; 3 Cyber Analysts',                        exceptionPath: 'If analyst unavailable: auto-escalate to Cyber Lead; if classification unclear: default to Critical', automationCandidate: false, lane: 'Cyber Analyst' },
+  { taskId: 'T04', moduleId: 'M-ESC-01', name: 'Review Classification',        description: 'Cyber Lead reviews analyst classification. Approves or returns for re-triage.',                                                                           taskTypeCode: 'BT-APR1', digitizationMode: 'manual'    as const, olaFull: '30 Minutes',             olaCompact: '30m', capacityAssumption: '≤50 Critical incidents/year requiring Lead review',            exceptionPath: 'If Cyber Lead unavailable: IC acts. Max 2 re-triage cycles before auto-escalation to CISO',         automationCandidate: false, lane: 'Cyber Lead / IC' },
+  { taskId: 'T05', moduleId: 'M-INV-01', name: 'Collect Digital Evidence',     description: 'Analyst collects logs, forensic images, network captures, and memory dumps',                                                                              taskTypeCode: 'BT-INV',  digitizationMode: 'assisted'  as const, olaFull: '2 Hours',                olaCompact: '2h',  capacityAssumption: '≤50 Critical incidents/year',                                   exceptionPath: 'If evidence system unavailable: manual collection with chain-of-custody form; document in PIR',      automationCandidate: true,  lane: 'Cyber Analyst' },
+  { taskId: 'T06', moduleId: 'M-INV-01', name: 'Execute Containment',          description: 'IT Support isolates affected systems, blocks malicious IPs, resets compromised credentials',                                                               taskTypeCode: 'BT-ACT',  digitizationMode: 'assisted'  as const, olaFull: '4 Hours',                olaCompact: '4h',  capacityAssumption: '≤50 Critical incidents/year; 2 IT Support engineers',           exceptionPath: 'If containment action fails: escalate to Cyber Lead; document in rework loop LOOP-01',               automationCandidate: true,  lane: 'IT Support' },
+  { taskId: 'T07', moduleId: 'M-REC-01', name: 'Recover Systems',              description: 'IT Support restores affected systems from clean backups; verifies integrity',                                                                               taskTypeCode: 'BT-ACT',  digitizationMode: 'manual'    as const, olaFull: 'Variable (2–8h)',          olaCompact: 'Var', capacityAssumption: '≤50 Critical incidents/year',                                   exceptionPath: 'If backup unavailable: invoke DR procedure; document deviation; escalate to CISO',                   automationCandidate: false, lane: 'IT Support' },
+  { taskId: 'T08', moduleId: 'M-REC-01', name: 'Document & Close Case',        description: 'Analyst documents findings, timeline, and resolution; sends M5 closure notification and CSAT',                                                             taskTypeCode: 'BT-CLO',  digitizationMode: 'assisted'  as const, olaFull: '4 Hours',                olaCompact: '4h',  capacityAssumption: '≤150 incidents/year',                                           exceptionPath: 'N/A — closure is always possible; incomplete documentation flagged for PIR follow-up',               automationCandidate: true,  lane: 'Cyber Analyst' },
+  { taskId: 'T09', moduleId: 'M-PIR-01', name: 'Conduct Post-Incident Rev.',   description: 'Cyber Lead leads PIR session; updates KB; publishes lessons-learned and control improvements (M6)',                                                       taskTypeCode: 'BT-REV',  digitizationMode: 'manual'    as const, olaFull: '8 Hours (within 10d)',    olaCompact: '8h',  capacityAssumption: '≤50 Critical incidents/year require full PIR; Medium/Low get lightweight review', exceptionPath: 'If PIR not completed within 10 days: auto-escalate to CISO; document in risk log', automationCandidate: false, lane: 'Cyber Lead / IC' },
+];
+
+// Build diagrams from registers (same logic as route.ts deriveStage2Diagrams)
+const s2Tiers = [
+  { tier: 'Critical', statedSlaDays: 1, computedSlaDays: 1, variance: 0, olaBreakdown: [ { service: 'Intake + Triage', olaDays: 0.08, executionMode: 'Sequential' as const }, { service: 'Containment + Recovery', olaDays: 0.6, executionMode: 'Sequential' as const }, { service: 'Closure + PIR (partial)', olaDays: 0.32, executionMode: 'Sequential' as const } ] },
+  { tier: 'High', statedSlaDays: 3, computedSlaDays: 2, variance: -1, varianceJustification: 'Computed SLA is 2 days; stated 3 days provides buffer for resource contention during concurrent incidents', olaBreakdown: [ { service: 'Intake + Triage', olaDays: 0.25, executionMode: 'Sequential' as const }, { service: 'Containment + Recovery', olaDays: 1.5, executionMode: 'Sequential' as const }, { service: 'Closure', olaDays: 0.25, executionMode: 'Sequential' as const } ] },
+];
+
+const s2PrimaryDiagram = buildDiagramFromRegisters(s2Tasks, s2Modules, 'Process_CYB_IR001', 'CYB-IR001 Incident Response') as Stage2['workflowDiagram'];
+const s2Variants = s2Tiers.map(tier => ({
+  tier: tier.tier,
+  diagram: buildDiagramFromRegisters(
+    s2Tasks, s2Modules,
+    `Process_CYB_IR001_${tier.tier.replace(/[^a-zA-Z0-9]/g, '_')}`,
+    `CYB-IR001 Incident Response — ${tier.tier}`,
+  ) as Stage2['workflowDiagram'],
+}));
 
 const stage2: Stage2 = {
-  moduleRegister: [
-    { moduleId: 'M-INT-01', name: 'Incident Intake', description: 'Receives, validates, and acknowledges incident reports from all channels', ola: '30 minutes', alignedSubflow: 'SF-INT-001 Standard Intake Pattern', subflowMaturity: 'Ratified' },
-    { moduleId: 'M-TRI-01', name: 'Triage & Classification', description: 'Analyst performs initial assessment and classifies severity tier', ola: '45 minutes', alignedSubflow: 'SF-TRI-001 Severity Classification Pattern', subflowMaturity: 'Stable' },
-    { moduleId: 'M-ESC-01', name: 'Escalation Gate', description: 'Cyber Lead reviews classification; declares Critical or returns for re-triage', ola: '30 minutes', alignedSubflow: 'SF-APR-002 Approval Gate Pattern', subflowMaturity: 'Ratified' },
-    { moduleId: 'M-INV-01', name: 'Investigation & Containment', description: 'Evidence collection, root cause analysis, and threat containment', ola: '6 hours', alignedSubflow: 'SF-INV-001 Investigation Pattern', subflowMaturity: 'Provisional' },
-    { moduleId: 'M-REC-01', name: 'Recovery & Closure', description: 'System recovery, case documentation, closure notification, and CSAT', ola: '4 hours', alignedSubflow: 'SF-CLO-001 Case Closure Pattern', subflowMaturity: 'Stable' },
-    { moduleId: 'M-PIR-01', name: 'Post-Incident Review', description: 'PIR within 10 business days; KB update and lessons-learned publication', ola: '8 hours', alignedSubflow: 'SF-PIR-001 PIR Pattern', subflowMaturity: 'Candidate' },
-  ],
-  taskRegister: [
-    { taskId: 'T01', moduleId: 'M-INT-01', name: 'Submit Incident Report', description: 'Reporter submits incident via security portal, service desk, or SIEM auto-alert', taskTypeCode: 'BT-INT', digitizationMode: 'automated', olaFull: '1 Minute', olaCompact: '1m', capacityAssumption: '≤150 incidents/year (avg 3/week)', exceptionPath: 'If portal unavailable: auto-failover to service desk; SIEM alerts always routed directly', automationCandidate: true, lane: 'Reporter' },
-    { taskId: 'T02', moduleId: 'M-INT-01', name: 'Acknowledge & Log (M1)', description: 'System auto-acknowledges receipt within 15 min, creates ITSM ticket, starts SLA clock', taskTypeCode: 'BT-INT', digitizationMode: 'automated', olaFull: '15 Minutes', olaCompact: '15m', capacityAssumption: '≤150 incidents/year', exceptionPath: 'If ITSM unavailable: log to backup register; alert on-call engineer; SLA clock still starts', automationCandidate: false, lane: 'System' },
-    { taskId: 'T03', moduleId: 'M-TRI-01', name: 'Perform Initial Triage', description: 'Analyst reviews incident details, collects initial data, assesses severity using classification matrix', taskTypeCode: 'BT-TRI', digitizationMode: 'assisted', olaFull: '45 Minutes', olaCompact: '45m', capacityAssumption: '≤150 incidents/year; 3 Cyber Analysts', exceptionPath: 'If analyst unavailable: auto-escalate to Cyber Lead; if classification unclear: default to Critical pending review', automationCandidate: false, lane: 'Cyber Analyst' },
-    { taskId: 'T04', moduleId: 'M-ESC-01', name: 'Review Classification Decision', description: 'Cyber Lead reviews analyst classification. Approves or returns for re-triage.', taskTypeCode: 'BT-APR1', digitizationMode: 'manual', olaFull: '30 Minutes', olaCompact: '30m', capacityAssumption: '≤50 Critical incidents/year requiring Lead review', exceptionPath: 'If Cyber Lead unavailable: IC acts. Max 2 re-triage cycles before auto-escalation to CISO', automationCandidate: false, lane: 'Cyber Lead / IC' },
-    { taskId: 'T05', moduleId: 'M-INV-01', name: 'Collect Digital Evidence', description: 'Analyst collects logs, forensic images, network captures, and memory dumps', taskTypeCode: 'BT-INV', digitizationMode: 'assisted', olaFull: '2 Hours', olaCompact: '2h', capacityAssumption: '≤50 Critical incidents/year', exceptionPath: 'If evidence system unavailable: manual collection with chain-of-custody form; document in PIR', automationCandidate: true, lane: 'Cyber Analyst' },
-    { taskId: 'T06', moduleId: 'M-INV-01', name: 'Execute Containment', description: 'IT Support isolates affected systems, blocks malicious IPs, resets compromised credentials', taskTypeCode: 'BT-ACT', digitizationMode: 'assisted', olaFull: '4 Hours', olaCompact: '4h', capacityAssumption: '≤50 Critical incidents/year; 2 IT Support engineers', exceptionPath: 'If containment action fails: escalate to Cyber Lead; document in rework loop LOOP-01', automationCandidate: true, lane: 'IT Support' },
-    { taskId: 'T07', moduleId: 'M-REC-01', name: 'Recover Systems', description: 'IT Support restores affected systems from clean backups; verifies integrity', taskTypeCode: 'BT-ACT', digitizationMode: 'manual', olaFull: 'Variable (2–8h)', olaCompact: 'Var', capacityAssumption: '≤50 Critical incidents/year', exceptionPath: 'If backup unavailable: invoke DR procedure; document deviation; escalate to CISO', automationCandidate: false, lane: 'IT Support' },
-    { taskId: 'T08', moduleId: 'M-REC-01', name: 'Document & Close Case', description: 'Analyst documents findings, timeline, and resolution; sends M5 closure notification and CSAT', taskTypeCode: 'BT-CLO', digitizationMode: 'assisted', olaFull: '4 Hours', olaCompact: '4h', capacityAssumption: '≤150 incidents/year', exceptionPath: 'N/A — closure is always possible; incomplete documentation flagged for PIR follow-up', automationCandidate: true, lane: 'Cyber Analyst' },
-    { taskId: 'T09', moduleId: 'M-PIR-01', name: 'Conduct Post-Incident Review', description: 'Cyber Lead leads PIR session; updates KB; publishes lessons-learned and control improvements (M6)', taskTypeCode: 'BT-REV', digitizationMode: 'manual', olaFull: '8 Hours (within 10 business days)', olaCompact: '8h', capacityAssumption: '≤50 Critical incidents/year require full PIR; Medium/Low get lightweight review', exceptionPath: 'If PIR not completed within 10 days: auto-escalate to CISO; document in risk log', automationCandidate: false, lane: 'Cyber Lead / IC' },
-  ],
+  moduleRegister: s2Modules,
+  taskRegister:   s2Tasks,
   loopGovernance: [
-    {
-      loopId: 'LOOP-01',
-      type: 'Rework',
-      reentryTaskId: 'T06',
-      maxCycles: 2,
-      timeout: '8h',
-      escalationPath: 'After 2 cycles or 8h: escalate to Cyber Lead; invoke DR procedure; document in PIR',
-      clockPolicy: 'Continue',
-      reasonCodes: ['CONTAINMENT_FAILED', 'SYSTEM_UNAVAILABLE', 'BACKUP_CORRUPT', 'SCOPE_EXPANDED'],
-    },
-    {
-      loopId: 'LOOP-02',
-      type: 'Rework',
-      reentryTaskId: 'T03',
-      maxCycles: 2,
-      timeout: '2h',
-      escalationPath: 'After 2 re-triage cycles: default classification to Critical; escalate to Cyber Lead immediately',
-      clockPolicy: 'Continue',
-      reasonCodes: ['CLASSIFICATION_UNCLEAR', 'NEW_EVIDENCE_RECEIVED', 'SEVERITY_CHANGED'],
-    },
+    { loopId: 'LOOP-01', type: 'Rework',        reentryTaskId: 'T06', maxCycles: 2, timeout: '8h',  escalationPath: 'After 2 cycles or 8h: escalate to Cyber Lead; invoke DR procedure; document in PIR', clockPolicy: 'Continue', reasonCodes: ['CONTAINMENT_FAILED', 'SYSTEM_UNAVAILABLE', 'BACKUP_CORRUPT', 'SCOPE_EXPANDED'] },
+    { loopId: 'LOOP-02', type: 'Rework',        reentryTaskId: 'T03', maxCycles: 2, timeout: '2h',  escalationPath: 'After 2 re-triage cycles: default classification to Critical; escalate to Cyber Lead immediately', clockPolicy: 'Continue', reasonCodes: ['CLASSIFICATION_UNCLEAR', 'NEW_EVIDENCE_RECEIVED', 'SEVERITY_CHANGED'] },
   ],
-  workflowDiagram: {
-    id: 'Process_CYB_IR001',
-    name: 'Cybersecurity Incident Response',
-    participants: [
-      { id: 'lane1', name: 'Reporter' },
-      { id: 'lane2', name: 'System' },
-      { id: 'lane3', name: 'Cyber Analyst' },
-      { id: 'lane4', name: 'Cyber Lead / IC' },
-      { id: 'lane5', name: 'IT Support' },
-      { id: 'lane6', name: 'Risk & Compliance' },
-    ],
-    elements: [
-      { type: 'startEvent', id: 'start_1', label: 'Incident Reported', colorKey: 'happy' },
-      { type: 'serviceTask', id: 'T01', label: 'Submit Incident Report [1m]', colorKey: 'system' },
-      { type: 'serviceTask', id: 'T02', label: 'Acknowledge & Log [15m]', colorKey: 'system' },
-      { type: 'userTask', id: 'T03', label: 'Perform Initial Triage [45m]', colorKey: 'manual' },
-      {
-        type: 'exclusiveGateway', id: 'gw_severity', label: 'Is it Critical?',
-        branches: [
-          {
-            condition: 'Yes',
-            path: [
-              { type: 'userTask', id: 'T04', label: 'Review Classification [30m]', colorKey: 'decision' },
-              { type: 'userTask', id: 'T05', label: 'Collect Digital Evidence [2h]', colorKey: 'manual' },
-              { type: 'userTask', id: 'T06', label: 'Execute Containment [4h]', colorKey: 'manual' },
-              { type: 'userTask', id: 'T07', label: 'Recover Systems [var]', colorKey: 'manual' },
-              { type: 'userTask', id: 'T08', label: 'Document & Close [4h]', colorKey: 'system' },
-              { type: 'userTask', id: 'T09', label: 'Conduct PIR [8h]', colorKey: 'subprocess' },
-              { type: 'endEvent', id: 'end_critical', label: 'Incident Resolved', colorKey: 'happy_end' },
-            ],
-          },
-          {
-            condition: 'No',
-            path: [
-              { type: 'userTask', id: 'T08', label: 'Document & Close [4h]', colorKey: 'system' },
-              { type: 'endEvent', id: 'end_std', label: 'Resolved — Standard', colorKey: 'happy_end' },
-            ],
-          },
-        ],
-      },
-    ],
-  },
+  workflowDiagram:  s2PrimaryDiagram,
+  workflowVariants: s2Variants,
   subflowAlignment: [
-    { moduleId: 'M-INT-01', pattern: 'SF-INT-001 Standard Intake Pattern', wcpCode: 'WCP-01', deviation: '' },
-    { moduleId: 'M-TRI-01', pattern: 'SF-TRI-001 Severity Classification Pattern', wcpCode: 'WCP-06', deviation: '' },
-    { moduleId: 'M-ESC-01', pattern: 'SF-APR-002 Approval Gate Pattern', wcpCode: 'WCP-04', deviation: 'Re-triage loop capped at 2 cycles (standard is 3); justified by Critical SLA constraint' },
-    { moduleId: 'M-INV-01', pattern: 'SF-INV-001 Investigation Pattern', wcpCode: 'WCP-09', deviation: 'Provisional pattern — under review by Library Curator' },
-    { moduleId: 'M-REC-01', pattern: 'SF-CLO-001 Case Closure Pattern', wcpCode: 'WCP-11', deviation: '' },
-    { moduleId: 'M-PIR-01', pattern: 'SF-PIR-001 PIR Pattern', wcpCode: 'WCP-14', deviation: 'Candidate pattern — proposed for ratification after this service goes live' },
+    { moduleId: 'M-INT-01', pattern: 'SF-INT-001 Standard Intake Pattern',             wcpCode: 'WCP-01', deviation: '' },
+    { moduleId: 'M-TRI-01', pattern: 'SF-TRI-001 Severity Classification Pattern',     wcpCode: 'WCP-06', deviation: '' },
+    { moduleId: 'M-ESC-01', pattern: 'SF-APR-002 Approval Gate Pattern',               wcpCode: 'WCP-04', deviation: 'Re-triage loop capped at 2 cycles (standard is 3); justified by Critical SLA constraint' },
+    { moduleId: 'M-INV-01', pattern: 'SF-INV-001 Investigation Pattern',               wcpCode: 'WCP-09', deviation: 'Provisional pattern — under review by Library Curator' },
+    { moduleId: 'M-REC-01', pattern: 'SF-CLO-001 Case Closure Pattern',                wcpCode: 'WCP-11', deviation: '' },
+    { moduleId: 'M-PIR-01', pattern: 'SF-PIR-001 PIR Pattern',                         wcpCode: 'WCP-14', deviation: 'Candidate pattern — proposed for ratification after this service goes live' },
   ],
-  workflowVariants: [
-    {
-      tier: 'Critical',
-      diagram: {
-        id: 'Process_CYB_IR001_Critical',
-        name: 'CYB-IR001 — Critical Variant',
-        participants: [
-          { id: 'lane1', name: 'Reporter' },
-          { id: 'lane2', name: 'System' },
-          { id: 'lane3', name: 'Cyber Analyst' },
-          { id: 'lane4', name: 'Cyber Lead / IC' },
-          { id: 'lane5', name: 'IT Support' },
-        ],
-        elements: [
-          { type: 'startEvent', id: 'start_1', label: 'Incident Reported', colorKey: 'happy' },
-          { type: 'serviceTask', id: 'T01', label: 'Submit Incident [1m]', colorKey: 'system' },
-          { type: 'serviceTask', id: 'T02', label: 'Acknowledge & Log [15m]', colorKey: 'system' },
-          { type: 'userTask', id: 'T03', label: 'Perform Triage [45m]', colorKey: 'manual' },
-          { type: 'userTask', id: 'T04', label: 'Review Classification [30m]', colorKey: 'decision' },
-          { type: 'userTask', id: 'T05', label: 'Collect Evidence [2h]', colorKey: 'manual' },
-          { type: 'userTask', id: 'T06', label: 'Execute Containment [4h]', colorKey: 'manual' },
-          { type: 'userTask', id: 'T07', label: 'Recover Systems [var]', colorKey: 'manual' },
-          { type: 'userTask', id: 'T08', label: 'Document & Close [4h]', colorKey: 'system' },
-          { type: 'userTask', id: 'T09', label: 'Conduct PIR [8h]', colorKey: 'subprocess' },
-          { type: 'endEvent', id: 'end_1', label: 'Incident Resolved', colorKey: 'happy_end' },
-        ],
-      },
-    },
-    {
-      tier: 'High',
-      diagram: {
-        id: 'Process_CYB_IR001_High',
-        name: 'CYB-IR001 — High Variant',
-        participants: [
-          { id: 'lane1', name: 'Reporter' },
-          { id: 'lane2', name: 'System' },
-          { id: 'lane3', name: 'Cyber Analyst' },
-          { id: 'lane4', name: 'Cyber Lead / IC' },
-        ],
-        elements: [
-          { type: 'startEvent', id: 'start_1', label: 'Incident Reported', colorKey: 'happy' },
-          { type: 'serviceTask', id: 'T01', label: 'Submit Incident [1m]', colorKey: 'system' },
-          { type: 'serviceTask', id: 'T02', label: 'Acknowledge & Log [15m]', colorKey: 'system' },
-          { type: 'userTask', id: 'T03', label: 'Perform Triage [45m]', colorKey: 'manual' },
-          { type: 'userTask', id: 'T05', label: 'Collect Evidence [2h]', colorKey: 'manual' },
-          { type: 'userTask', id: 'T06', label: 'Execute Containment [4h]', colorKey: 'manual' },
-          { type: 'userTask', id: 'T08', label: 'Document & Close [4h]', colorKey: 'system' },
-          { type: 'endEvent', id: 'end_1', label: 'Incident Resolved', colorKey: 'happy_end' },
-        ],
-      },
-    },
-  ],
-  severityTierReconciliation: [
-    {
-      tier: 'Critical',
-      statedSlaDays: 1,
-      computedSlaDays: 1,
-      variance: 0,
-      olaBreakdown: [
-        { service: 'Intake + Triage', olaDays: 0.08, executionMode: 'Sequential' },
-        { service: 'Containment + Recovery', olaDays: 0.6, executionMode: 'Sequential' },
-        { service: 'Closure + PIR (partial)', olaDays: 0.32, executionMode: 'Sequential' },
-      ],
-    },
-    {
-      tier: 'High',
-      statedSlaDays: 3,
-      computedSlaDays: 2,
-      variance: -1,
-      varianceJustification: 'Computed SLA is 2 days; stated 3 days provides buffer for resource contention during concurrent incidents',
-      olaBreakdown: [
-        { service: 'Intake + Triage', olaDays: 0.25, executionMode: 'Sequential' },
-        { service: 'Containment + Recovery', olaDays: 1.5, executionMode: 'Sequential' },
-        { service: 'Closure', olaDays: 0.25, executionMode: 'Sequential' },
-      ],
-    },
-  ],
+  severityTierReconciliation: s2Tiers,
 };
 
 // ─── Sample Stage 3 ──────────────────────────────────────────────────────────
